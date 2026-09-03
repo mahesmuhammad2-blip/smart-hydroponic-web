@@ -10,7 +10,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: #f4f6f9;
       margin: 0;
       padding: 20px;
@@ -42,7 +42,7 @@
       cursor: pointer;
       border-radius: 5px;
       font-weight: bold;
-      transition: 0.3s;
+      transition: background-color 0.3s;
     }
     .tab-btn.active {
       background-color: #3498db;
@@ -105,9 +105,21 @@
       cursor: pointer;
       margin: 10px;
       color: white;
+      transition: opacity 0.2s;
     }
+    .btn-control:hover { opacity: 0.85; }
     .btn-on { background-color: #2ecc71; }
     .btn-off { background-color: #e74c3c; }
+
+    .badge-status {
+      padding: 6px 16px;
+      border-radius: 20px;
+      background: #7f8c8d;
+      color: white;
+      font-weight: bold;
+      display: inline-block;
+      margin-left: 8px;
+    }
   </style>
 </head>
 <body>
@@ -152,7 +164,7 @@
   <div id="slide2" class="tab-content">
     <div class="panel-card">
       <h2>Kontrol Pompa & Aktuator</h2>
-      <p>Kelola status operasional pompa nutrisi dan sistem penyiraman secara jarak jauh.</p>
+      <p>Status Pompa Saat Ini: <span id="pump-badge" class="badge-status">MATI</span></p>
       <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
       <div>
         <h3>Pompa Nutrisi A & B</h3>
@@ -257,11 +269,22 @@
       chart.update();
     }
 
-    // Fungsi Pengiriman Perintah Kontrol Pompa
+    // Kirim Perintah Kontrol Pompa ke Server tanpa Alert
     function controlPump(action) {
       socket.emit('controlCommand', { command: action });
-      alert(`Perintah ${action} telah dikirim ke server.`);
     }
+
+    // Menerima Respon Status Pompa Real-Time untuk Update Badge
+    socket.on('pumpStatus', (status) => {
+      const badge = document.getElementById('pump-badge');
+      if (status === 'PUMP_ON') {
+        badge.innerText = 'NYALA';
+        badge.style.background = '#2ecc71';
+      } else {
+        badge.innerText = 'MATI';
+        badge.style.background = '#e74c3c';
+      }
+    });
   </script>
 </body>
 </html>
