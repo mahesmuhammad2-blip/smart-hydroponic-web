@@ -42,18 +42,29 @@
       cursor: pointer;
       border-radius: 5px;
       font-weight: bold;
+      transition: 0.3s;
     }
     .tab-btn.active {
       background-color: #3498db;
       color: white;
     }
 
+    /* Tab Content Visibility */
+    .tab-content {
+      display: none;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Styling Slide 1 */
     .cards-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 20px;
-      max-width: 1000px;
-      margin: 0 auto 20px auto;
+      margin-bottom: 20px;
     }
     .card {
       background: white;
@@ -69,8 +80,6 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 20px;
-      max-width: 1000px;
-      margin: 0 auto;
     }
     .chart-card {
       background: white;
@@ -78,6 +87,27 @@
       border-radius: 10px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
+
+    /* Styling Panel Kontrol & Riwayat */
+    .panel-card {
+      background: white;
+      padding: 25px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      text-align: center;
+    }
+    .btn-control {
+      padding: 12px 25px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px;
+      color: white;
+    }
+    .btn-on { background-color: #2ecc71; }
+    .btn-off { background-color: #e74c3c; }
   </style>
 </head>
 <body>
@@ -87,45 +117,75 @@
     Status Koneksi Server: <span id="status-text" class="status-offline">● Menghubungkan...</span>
   </div>
 
+  <!-- Tombol Navigasi Tab -->
   <div class="nav-tabs">
-    <button class="tab-btn active">Slide 1: Real-Time Sensor</button>
-    <button class="tab-btn">Slide 2: Kontrol Pompa</button>
-    <button class="tab-btn">Slide 3: Riwayat Data</button>
+    <button class="tab-btn active" onclick="openTab('slide1', this)">Slide 1: Real-Time Sensor</button>
+    <button class="tab-btn" onclick="openTab('slide2', this)">Slide 2: Kontrol Pompa</button>
+    <button class="tab-btn" onclick="openTab('slide3', this)">Slide 3: Riwayat Data</button>
   </div>
 
-  <!-- Cards -->
-  <div class="cards-grid">
-    <div class="card">
-      <h3>Suhu Air</h3>
-      <div class="val" id="val-temp">0 °C</div>
+  <!-- SLIDE 1: REAL-TIME SENSOR -->
+  <div id="slide1" class="tab-content active">
+    <div class="cards-grid">
+      <div class="card">
+        <h3>Suhu Air</h3>
+        <div class="val" id="val-temp">0 °C</div>
+      </div>
+      <div class="card">
+        <h3>Nilai pH</h3>
+        <div class="val" id="val-ph">0</div>
+      </div>
+      <div class="card">
+        <h3>Pekatan EC</h3>
+        <div class="val" id="val-ec">0 mS/cm</div>
+      </div>
     </div>
-    <div class="card">
-      <h3>Nilai pH</h3>
-      <div class="val" id="val-ph">0</div>
-    </div>
-    <div class="card">
-      <h3>Pekatan EC</h3>
-      <div class="val" id="val-ec">0 mS/cm</div>
+
+    <div class="charts-grid">
+      <div class="chart-card"><canvas id="chartTemp"></canvas></div>
+      <div class="chart-card"><canvas id="chartPH"></canvas></div>
+      <div class="chart-card"><canvas id="chartEC"></canvas></div>
     </div>
   </div>
 
-  <!-- Charts -->
-  <div class="charts-grid">
-    <div class="chart-card">
-      <canvas id="chartTemp"></canvas>
+  <!-- SLIDE 2: KONTROL POMPA -->
+  <div id="slide2" class="tab-content">
+    <div class="panel-card">
+      <h2>Kontrol Pompa & Aktuator</h2>
+      <p>Kelola status operasional pompa nutrisi dan sistem penyiraman secara jarak jauh.</p>
+      <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+      <div>
+        <h3>Pompa Nutrisi A & B</h3>
+        <button class="btn-control btn-on" onclick="controlPump('PUMP_ON')">NYALAKAN POMPA</button>
+        <button class="btn-control btn-off" onclick="controlPump('PUMP_OFF')">MATIKAN POMPA</button>
+      </div>
     </div>
-    <div class="chart-card">
-      <canvas id="chartPH"></canvas>
-    </div>
-    <div class="chart-card">
-      <canvas id="chartEC"></canvas>
+  </div>
+
+  <!-- SLIDE 3: RIWAYAT DATA -->
+  <div id="slide3" class="tab-content">
+    <div class="panel-card">
+      <h2>Riwayat Log Parameter</h2>
+      <p>Data historis pemantauan sensor hidroponik yang tersimpan di sistem.</p>
+      <p style="color: #777; margin-top: 30px;">Tabel riwayat data akan dimuat di sini...</p>
     </div>
   </div>
 
   <script>
-    // Inisialisasi Socket.io secara dinamis sesuai domain hosting
-    const socket = io();
+    // Fungsi Switch Tab Navigation
+    function openTab(tabId, btnElement) {
+      const contents = document.querySelectorAll('.tab-content');
+      contents.forEach(content => content.classList.remove('active'));
 
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+
+      document.getElementById(tabId).classList.add('active');
+      btnElement.classList.add('active');
+    }
+
+    // Inisialisasi Socket.io Dinamis
+    const socket = io();
     const statusText = document.getElementById('status-text');
 
     socket.on('connect', () => {
@@ -195,6 +255,12 @@
         chart.data.datasets[0].data.shift();
       }
       chart.update();
+    }
+
+    // Fungsi Pengiriman Perintah Kontrol Pompa
+    function controlPump(action) {
+      socket.emit('controlCommand', { command: action });
+      alert(`Perintah ${action} telah dikirim ke server.`);
     }
   </script>
 </body>
