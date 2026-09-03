@@ -4,16 +4,20 @@ const path = require('path');
 
 const app = express();
 
-// Set folder 'public' untuk menyajikan file HTML, CSS, dan JS frontend
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+// ROUTE HALAMAN UTAMA
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Konfigurasi HiveMQ Cloud
 const brokerUrl = 'mqtts://d6c3e7f55ab046e4ad3b0230393872d3.s1.eu.hivemq.cloud:8883';
 const options = {
   clientId: 'nodejs_backend_' + Math.random().toString(16).substr(2, 8),
   username: 'hidroponik_user',
-  password: 'Password123!', // Masukkan password yang diisikan tadi
+  password: 'PASSWORD_YANG_ANDA_BUAT',
   rejectUnauthorized: true
 };
 
@@ -35,7 +39,6 @@ mqttClient.on('error', (err) => {
   console.error('❌ Gagal terhubung ke HiveMQ Cloud:', err.message);
 });
 
-// Penetapan PORT dinamis untuk Cloud Hosting (Render) dan pengujian lokal (3000)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
