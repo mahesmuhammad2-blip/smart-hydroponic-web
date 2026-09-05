@@ -8,6 +8,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Socket.io Client -->
   <script src="/socket.io/socket.io.js"></script>
+  <!-- MQTT.js via WebSocket CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -25,6 +28,9 @@
       font-size: 14px;
       font-weight: bold;
       margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
     }
     .status-online { color: #2ecc71; }
     .status-offline { color: #e74c3c; }
@@ -90,10 +96,10 @@
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
 
-    /* SLIDE 2 STYLES (KONTROL POMPA) */
+    /* SLIDE 2 STYLES (KONTROL POMPA & DOSING) */
     .control-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 20px;
     }
     .panel-box {
@@ -125,6 +131,46 @@
       color: #333;
     }
     
+    /* Input & Button Dosing Style */
+    .dosing-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .input-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .input-box input {
+      width: 80px;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      text-align: center;
+      font-weight: bold;
+    }
+    .btn-dosing {
+      padding: 8px 15px;
+      border: none;
+      border-radius: 5px;
+      background-color: #3498db;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-dosing:hover { background-color: #2980b9; }
+    .btn-dosing-simultan {
+      background-color: #8e44ad;
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .btn-dosing-simultan:hover { background-color: #7d3c98; }
+
     /* Pilot Lamp */
     .pilot-status {
       display: flex;
@@ -243,7 +289,8 @@
 
   <h1>Smart Hydroponic Dashboard</h1>
   <div class="status-container">
-    Status Koneksi Server: <span id="status-text" class="status-offline">● Menghubungkan...</span>
+    <span>Server: <span id="status-text" class="status-offline">● Menghubungkan...</span></span>
+    <span>MQTT Broker: <span id="mqtt-status" class="status-offline">● Disconnected</span></span>
   </div>
 
   <!-- Tombol Navigasi Tab -->
@@ -277,13 +324,13 @@
     </div>
   </div>
 
-  <!-- SLIDE 2: KONTROL POMPA -->
+  <!-- SLIDE 2: KONTROL POMPA & DOSING -->
   <div id="slide2" class="tab-content">
     <div class="control-grid">
       
-      <!-- Panel Left: Status Operasional Lampu Pilot -->
+      <!-- Panel 1: Status Operasional Lampu Pilot -->
       <div class="panel-box">
-        <div class="panel-title">Status Operasional Pompa (Pilot Lamp)</div>
+        <div class="panel-title">Status Operasional (Pilot Lamp)</div>
         
         <div class="control-row">
           <span class="control-label">Pompa Utama (Sirkulasi)</span>
@@ -318,9 +365,37 @@
         </div>
       </div>
 
-      <!-- Panel Right: Sakelar Switch Toggle Control -->
+      <!-- Panel 2: Kontrol Dosing Nutrisi Precise (mL) -->
       <div class="panel-box">
-        <div class="panel-title">Kontrol Manual Aktuator</div>
+        <div class="panel-title">Perintah Dosing Nutrisi (mL)</div>
+        <div class="dosing-group">
+          <div class="input-box">
+            <span class="control-label">Dosis Nutrisi A:</span>
+            <div>
+              <input type="number" id="vol-a" value="10" min="1"> mL
+            </div>
+            <button class="btn-dosing" onclick="kirimDosingSingle('A')">Kirim A</button>
+          </div>
+
+          <div class="input-box">
+            <span class="control-label">Dosis Nutrisi B:</span>
+            <div>
+              <input type="number" id="vol-b" value="10" min="1"> mL
+            </div>
+            <button class="btn-dosing" onclick="kirimDosingSingle('B')">Kirim B</button>
+          </div>
+
+          <hr style="width: 100%; border: 0.5px solid #f0f0f0; margin: 5px 0;">
+
+          <button class="btn-dosing btn-dosing-simultan" onclick="kirimDosingSimultan()">
+            🚀 Dosing Simultan (A & B Bersamaan)
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel 3: Sakelar Switch Toggle Control Manual -->
+      <div class="panel-box">
+        <div class="panel-title">Kontrol Manual Sakelar</div>
         
         <div class="control-row">
           <span class="control-label">Sakelar Pompa Utama</span>
@@ -407,7 +482,7 @@
   </div>
 
   <script>
-    // Tab Switching Function
+    // 1. TAB SWITCHING
     function openTab(tabId, btnElement) {
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -416,7 +491,7 @@
       btnElement.classList.add('active');
     }
 
-    // Socket.io Connection Setup
+    // 2. SOCKET.IO SETUP (Render Server Connection)
     const socket = io();
     const statusText = document.getElementById('status-text');
 
@@ -430,7 +505,47 @@
       statusText.innerText = '● OFFLINE';
     });
 
-    // Chart.js Configuration
+    // 3. MQTT CLIENT SETUP (Broker EMQX Direct WebSocket)
+    const mqttStatusText = document.getElementById('mqtt-status');
+    const mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: 'WebDashboard_' + Math.random().toString(16).substr(2, 8)
+    });
+
+    mqttClient.on('connect', () => {
+      mqttStatusText.className = 'status-online';
+      mqttStatusText.innerText = '● CONNECTED';
+      console.log('Terhubung ke Broker MQTT EMQX!');
+      
+      // Subscribe topic status dari ESP32 / Node-RED
+      mqttClient.subscribe('hidroponik/dosing/status');
+    });
+
+    mqttClient.on('offline', () => {
+      mqttStatusText.className = 'status-offline';
+      mqttStatusText.innerText = '● DISCONNECTED';
+    });
+
+    // Menerima update status dari ESP32
+    mqttClient.on('message', (topic, message) => {
+      const msg = message.toString();
+      console.log(`[MQTT IN] ${topic}: ${msg}`);
+
+      if (topic === 'hidroponik/dosing/status') {
+        if (msg.includes('PROSES_POMPA_A')) {
+          updatePilotLamp('nutA', true);
+        } else if (msg.includes('PROSES_POMPA_B')) {
+          updatePilotLamp('nutB', true);
+        } else if (msg.includes('PROSES_POMPA_SIMULTAN_AB')) {
+          updatePilotLamp('nutA', true);
+          updatePilotLamp('nutB', true);
+        } else if (msg.includes('SELESAI') || msg.includes('UNLOCKED')) {
+          updatePilotLamp('nutA', false);
+          updatePilotLamp('nutB', false);
+        }
+      }
+    });
+
+    // 4. CHART.JS CONFIGURATION
     const ctxTemp = document.getElementById('chartTemp').getContext('2d');
     const ctxPH = document.getElementById('chartPH').getContext('2d');
     const ctxEC = document.getElementById('chartEC').getContext('2d');
@@ -448,7 +563,7 @@
     const chartPH = new Chart(ctxPH, configChart('pH', '#3498db'));
     const chartEC = new Chart(ctxEC, configChart('EC (mS/cm)', '#2ecc71'));
 
-    // Receive Real-time Data
+    // Receive Real-time Data via Socket.io
     socket.on('sensorData', (data) => {
       const now = new Date().toLocaleTimeString();
       if (data.temp !== undefined) {
@@ -475,12 +590,53 @@
       chart.update();
     }
 
-    // Control Toggle Logic for Slide 2
+    // 5. FUNGSI KIRIM DOSING (MQTT & Socket.io)
+    function kirimDosingSingle(pompa) {
+      const inputVol = document.getElementById(pompa === 'A' ? 'vol-a' : 'vol-b').value;
+      if (!inputVol || inputVol <= 0) return alert('Masukkan volume yang valid!');
+
+      const payload = `${pompa}:${inputVol}`; // Format: A:10 / B:10
+      
+      // Kirim via MQTT
+      if (mqttClient.connected) {
+        mqttClient.publish('hidroponik/dosing/set', payload);
+      }
+      // Kirim via Socket.io
+      socket.emit('dosingCommand', { pompa: pompa, volume: inputVol });
+
+      alert(`Perintah Dosing Pompa ${pompa} sebesar ${inputVol} mL dikirim!`);
+    }
+
+    function kirimDosingSimultan() {
+      const volA = document.getElementById('vol-a').value;
+      const volB = document.getElementById('vol-b').value;
+      if (!volA || !volB || volA <= 0 || volB <= 0) return alert('Masukkan volume A dan B yang valid!');
+
+      const payload = `AB:${volA}:${volB}`; // Format: AB:10:10
+      
+      // Kirim via MQTT
+      if (mqttClient.connected) {
+        mqttClient.publish('hidroponik/dosing/set', payload);
+      }
+      // Kirim via Socket.io
+      socket.emit('dosingCommand', { pompa: 'AB', volumeA: volA, volumeB: volB });
+
+      alert(`Perintah Dosing Simultan (A: ${volA}mL & B: ${volB}mL) dikirim!`);
+    }
+
+    // 6. TOGGLE SAKELAR MANUAL
     function toggleActuator(device, isChecked) {
       const command = `${device.toUpperCase()}_${isChecked ? 'ON' : 'OFF'}`;
+      
+      // Emisi Socket.io
       socket.emit('controlCommand', { command: command, device: device, state: isChecked });
 
-      // Local UI Pilot Lamp Update (Seketika)
+      // Publish MQTT
+      if (mqttClient.connected) {
+        mqttClient.publish('hidroponik/kontrol/manual', JSON.stringify({ device: device, state: isChecked }));
+      }
+
+      // Local UI Pilot Lamp Update
       updatePilotLamp(device, isChecked);
     }
 
