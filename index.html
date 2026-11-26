@@ -4,244 +4,621 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Hydroponic Dashboard</title>
-  <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Socket.io Client -->
   <script src="/socket.io/socket.io.js"></script>
-  <!-- MQTT.js via WebSocket CDN -->
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f6f9;
-      margin: 0;
-      padding: 20px;
-      color: #333;
+    :root {
+      --bg-canvas: #eef1f7;
+      --bg-surface: #ffffff;
+      --bg-soft: #f8f9fc;
+      --text-main: #1e2433;
+      --text-muted: #6c758d;
+      --accent: #5b46f6;
+      --accent-soft: rgba(91, 70, 246, 0.1);
+      --border: #eceff5;
+      --shadow: 0 10px 30px rgba(30, 36, 51, 0.06);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
     }
 
-    /* Styling Banner Informasi & Warning Slideshow di Atas */
-    .info-banner-container {
-      background: linear-gradient(135deg, #f39c12, #e67e22);
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      text-align: center;
-      font-weight: bold;
-      font-size: 14px;
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #e8ecf8 0%, #f4f6fb 55%, #e5ebfa 100%);
+      margin: 0;
+      padding: 20px;
+      color: var(--text-main);
+      min-height: 100vh;
+    }
+
+    .app-shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      background: var(--bg-soft);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 245px 1fr;
       overflow: hidden;
-      position: relative;
-      min-height: 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      min-height: calc(100vh - 40px);
+      transition: grid-template-columns 0.25s ease;
     }
-    .info-slide {
+
+    .app-shell.sidebar-collapsed {
+      grid-template-columns: 78px 1fr;
+    }
+
+    .app-shell.sidebar-collapsed .brand-text,
+    .app-shell.sidebar-collapsed .menu-label,
+    .app-shell.sidebar-collapsed .sidebar-footer {
       display: none;
-      animation: fadeIn 0.6s ease-in-out;
     }
-    .info-slide.active {
-      display: block;
+
+    .app-shell.sidebar-collapsed .brand {
+      justify-content: center;
+      padding: 4px 0 20px;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(5px); }
+
+    .app-shell.sidebar-collapsed .tab-btn {
+      justify-content: center;
+      padding: 12px 8px;
+      position: relative;
+    }
+
+    .app-shell.sidebar-collapsed .nav-badge {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      padding: 1px 5px;
+      font-size: 10px;
+      min-width: 18px;
+    }
+
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 360px;
+    }
+
+    .toast-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      box-shadow: 0 12px 24px rgba(30, 36, 51, 0.14);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      animation: slideInToast 0.25s ease;
+    }
+
+    .toast-item.pump { border-left-color: #16a34a; }
+    .toast-item.warning { border-left-color: #ea580c; }
+    .toast-item.info { border-left-color: var(--accent); }
+
+    .toast-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 2px;
+      color: var(--text-main);
+    }
+
+    .toast-msg {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .toast-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 15px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    @keyframes slideInToast {
+      from { opacity: 0; transform: translateY(-8px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    h1 {
-      text-align: center;
-      margin-bottom: 5px;
-    }
-    .status-container {
-      text-align: center;
-      font-size: 14px;
-      font-weight: bold;
-      margin-bottom: 20px;
+    .sidebar {
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 16px;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .sidebar-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .hamburger-btn {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text-main);
+      border-radius: var(--radius-sm);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .hamburger-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(91, 70, 246, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 6px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: bold;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .nav-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tab-btn {
+      width: 100%;
+      padding: 12px 14px;
+      border: none;
+      background-color: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 14px;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: 0.2s ease;
+    }
+
+    .menu-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      background-color: var(--bg-soft);
+      color: var(--text-main);
+    }
+
+    .tab-btn.active {
+      background-color: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 6px 16px rgba(91, 70, 246, 0.25);
+    }
+
+    .nav-badge {
+      background: rgba(91, 70, 246, 0.14);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      min-width: 22px;
+      text-align: center;
+    }
+
+    .tab-btn.active .nav-badge {
+      background: rgba(255, 255, 255, 0.22);
+      color: #ffffff;
+    }
+
+    .sidebar-footer {
+      margin-top: 24px;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      background: var(--bg-soft);
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .main-area {
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
       gap: 20px;
     }
-    .status-online { color: #2ecc71; }
-    .status-offline { color: #e74c3c; }
 
-    .nav-tabs {
+    .topbar {
+      background: var(--bg-surface);
+      padding: 16px 22px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
       display: flex;
-      justify-content: center;
-      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .topbar-heading h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .last-update {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .status-container {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-pill {
+      background: var(--bg-soft);
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+
+    .status-online { color: #16a34a; }
+    .status-offline { color: #dc2626; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .slide1-warning-box {
+      background: #fff9ed;
+      border: 1px solid #fde3b4;
+      border-left: 5px solid #f59e0b;
+      border-radius: var(--radius-lg);
+      padding: 16px 20px;
       margin-bottom: 20px;
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
     }
-    .tab-btn {
-      padding: 10px 20px;
-      border: none;
-      background-color: #e0e0e0;
-      cursor: pointer;
-      border-radius: 5px;
-      font-weight: bold;
-      transition: 0.3s;
+    .slide1-warning-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #b45309;
+      margin: 0 0 8px 0;
     }
-    .tab-btn.active {
-      background-color: #3498db;
-      color: white;
+    .slide1-warning-list {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+    .slide1-warning-list li { margin-bottom: 4px; }
+    .slide1-warning-list li:last-child { margin-bottom: 0; }
+
+    .crop-phase-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 5px solid #16a34a;
+      border-radius: var(--radius-lg);
+      padding: 18px 22px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
     }
 
-    /* Tab Content Visibility */
-    .tab-content {
-      display: none;
-      max-width: 1000px;
-      margin: 0 auto;
+    .crop-phase-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
     }
-    .tab-content.active {
+
+    .crop-phase-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .crop-phase-guides {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .crop-guide-chip {
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 9px 12px;
+      font-size: 12px;
+    }
+
+    .crop-guide-chip span {
       display: block;
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-bottom: 2px;
     }
 
-    /* Card General */
-    .card {
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
+    .crop-guide-chip strong {
+      color: var(--text-main);
+      font-size: 13px;
+    }
+
+    .crop-phase-form {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .crop-phase-form select,
+    .crop-phase-form input[type="number"],
+    .crop-phase-form input[type="text"] {
+      padding: 7px 10px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      background: #fff;
+      color: var(--text-main);
+    }
+
+    .crop-phase-form input[type="number"] {
+      width: 78px;
       text-align: center;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      font-weight: 700;
     }
 
-    /* SLIDE 1 STYLES */
+    .crop-phase-form input[type="text"] {
+      flex: 1 1 200px;
+      min-width: 180px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      padding: 20px;
+      border-radius: var(--radius-lg);
+      text-align: center;
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
+    }
+
     .cards-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 18px;
       margin-bottom: 20px;
     }
-    .card h3 { margin-top: 0; color: #666; font-size: 16px; }
-    .card .val { font-size: 28px; font-weight: bold; margin: 10px 0; }
+    .card h3 {
+      margin-top: 0;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .card .val {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 8px 0 0;
+      color: var(--text-main);
+    }
 
     .charts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 18px;
     }
     .chart-card {
-      background: white;
-      padding: 15px;
-      border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      background: var(--bg-surface);
+      padding: 16px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
     }
 
-    /* SLIDE 2 STYLES (KONTROL POMPA & DOSING) */
     .control-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
+      gap: 18px;
     }
     .panel-box {
-      background: white;
-      padding: 20px 25px;
-      border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      background: var(--bg-surface);
+      padding: 20px 22px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
     }
     .panel-title {
       font-size: 16px;
-      font-weight: bold;
-      color: #2c3e50;
+      font-weight: 700;
+      color: var(--text-main);
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     .control-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 12px 0;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
     }
-    .control-row:last-child {
-      border-bottom: none;
-    }
+    .control-row:last-child { border-bottom: none; }
     .control-label {
-      font-size: 14px;
-      font-weight: bold;
-      color: #333;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .control-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
     }
 
-    /* Input & Button Dosing Style */
-    .dosing-group {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 10px;
-    }
+    .dosing-group { display: flex; flex-direction: column; gap: 11px; margin-top: 6px; }
     .input-box {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
+    }
+    .input-box .control-label { min-width: 105px; }
+    .dose-unit-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-weight: 600;
     }
     .input-box input {
-      width: 80px;
+      width: 68px;
       padding: 6px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
       text-align: center;
-      font-weight: bold;
+      font-weight: 700;
+      color: var(--text-main);
     }
     .btn-dosing {
-      padding: 8px 15px;
+      padding: 7px 11px;
       border: none;
-      border-radius: 5px;
-      background-color: #3498db;
+      border-radius: var(--radius-sm);
+      background-color: var(--accent);
       color: white;
-      font-weight: bold;
+      font-weight: 600;
       cursor: pointer;
       transition: 0.2s;
+      font-size: 12px;
+      white-space: nowrap;
     }
-    .btn-dosing:hover { background-color: #2980b9; }
+    .btn-dosing:hover { filter: brightness(0.93); }
+    .btn-dosing-ph-up { background-color: #0d9488; }
+    .btn-dosing-ph-down { background-color: #ea580c; }
     .btn-dosing-simultan {
-      background-color: #8e44ad;
+      background-color: #7c3aed;
       width: 100%;
       padding: 10px;
-      margin-top: 10px;
+      margin-top: 4px;
+      font-size: 13px;
     }
-    .btn-dosing-simultan:hover { background-color: #7d3c98; }
 
-    /* Pilot Lamp */
+    .status-log-box {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--bg-soft);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--text-main);
+      border-left: 3px solid var(--accent);
+    }
+
     .pilot-status {
       display: flex;
       align-items: center;
       gap: 8px;
       font-size: 12px;
-      font-weight: bold;
-      color: #e74c3c;
+      font-weight: 700;
+      color: #dc2626;
+      white-space: nowrap;
     }
     .pilot-lamp {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
       border-radius: 50%;
-      background-color: #e74c3c;
-      box-shadow: 0 0 8px rgba(231, 76, 60, 0.8);
+      background-color: #dc2626;
+      box-shadow: 0 0 8px rgba(220, 38, 38, 0.55);
       transition: 0.3s;
     }
     .pilot-lamp.on {
-      background-color: #2ecc71;
-      box-shadow: 0 0 8px rgba(46, 204, 113, 0.8);
+      background-color: #16a34a;
+      box-shadow: 0 0 8px rgba(22, 163, 74, 0.55);
     }
 
-    /* Toggle Switch UI */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 46px;
-      height: 24px;
-    }
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
+    .switch { position: relative; display: inline-block; width: 46px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute;
       cursor: pointer;
       top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #ccc;
-      transition: .4s;
+      background-color: #cbd5e1;
+      transition: .3s;
       border-radius: 24px;
     }
     .slider:before {
@@ -252,352 +629,1526 @@
       left: 3px;
       bottom: 3px;
       background-color: white;
-      transition: .4s;
+      transition: .3s;
       border-radius: 50%;
     }
-    input:checked + .slider {
-      background-color: #2ecc71;
+    input:checked + .slider { background-color: #16a34a; }
+    input:checked + .slider:before { transform: translateX(22px); }
+
+    .schedule-box {
+      background: var(--bg-surface);
+      padding: 20px 22px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
+      margin-top: 18px;
     }
-    input:checked + .slider:before {
-      transform: translateX(22px);
+    .schedule-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .schedule-form input, .schedule-form select {
+      padding: 8px 10px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      background: #fff;
+      color: var(--text-main);
+    }
+    .schedule-form input[type="number"] {
+      width: 76px;
+      text-align: center;
+      font-weight: 700;
+    }
+    .btn-add-sch {
+      padding: 8px 16px;
+      background-color: #16a34a;
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-add-sch:hover { filter: brightness(0.94); }
+    .btn-del {
+      padding: 5px 10px;
+      background-color: #dc2626;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
     }
 
-    /* SLIDE 3 STYLES (RIWAYAT DATA) */
     .filter-card {
-      background: white;
+      background: var(--bg-surface);
       padding: 15px 20px;
-      border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
       align-items: center;
-      gap: 15px;
+      gap: 12px;
       margin-bottom: 20px;
     }
     .filter-card input[type="date"] {
       padding: 8px 12px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
       font-size: 14px;
+      color: var(--text-main);
     }
     .btn-search {
       padding: 8px 20px;
-      background-color: #2ecc71;
+      background-color: var(--accent);
       color: white;
       border: none;
-      border-radius: 5px;
-      font-weight: bold;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
       cursor: pointer;
     }
+    .btn-export {
+      padding: 8px 16px;
+      background-color: #1e2433;
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-secondary-sm {
+      padding: 6px 12px;
+      background-color: var(--bg-soft);
+      color: var(--text-main);
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-secondary-sm:hover:not(:disabled) { background-color: #e2e8f0; }
+    .btn-secondary-sm:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-accent-sm {
+      padding: 6px 12px;
+      background-color: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(91, 70, 246, 0.25);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-accent-sm:hover { background-color: rgba(91, 70, 246, 0.16); }
 
     .table-container {
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-      margin-top: 20px;
+      background: var(--bg-surface);
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
+      margin-top: 15px;
       overflow-x: auto;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: center;
-      font-size: 14px;
-    }
+    table { width: 100%; border-collapse: collapse; text-align: center; font-size: 13.5px; }
     th {
       padding: 12px;
-      background-color: #f8f9fa;
-      color: #333;
-      font-weight: bold;
+      background-color: var(--bg-soft);
+      color: var(--text-muted);
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
     }
     td {
       padding: 12px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-main);
+    }
+    tr:last-child td { border-bottom: none; }
+
+    .notif-page-grid,
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+    }
+
+    .notif-settings-box {
+      background: var(--bg-surface);
+      padding: 20px 22px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 16px rgba(30, 36, 51, 0.04);
+      border: 1px solid var(--border);
+    }
+
+    .notif-settings-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .notif-settings-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 0;
+    }
+
+    .settings-field-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .settings-field-row:last-child {
+      border-bottom: none;
+    }
+
+    .settings-range-inputs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .settings-range-inputs input {
+      width: 74px;
+      padding: 6px 8px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
+      text-align: center;
+      font-weight: 700;
+      color: var(--text-main);
+      background: #fff;
+    }
+
+    .settings-text-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d5dbe7;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: var(--text-main);
+      background: #fff;
+      margin-top: 6px;
+    }
+
+    .settings-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .inline-notif-popup {
+      display: none;
+      margin-bottom: 14px;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: #f5f3ff;
+      border: 1px solid #ddd6fe;
+      border-left: 5px solid var(--accent);
+      box-shadow: 0 6px 18px rgba(91, 70, 246, 0.1);
+    }
+
+    .inline-notif-popup.show {
+      display: block;
+      animation: slideInToast 0.22s ease;
+    }
+
+    .inline-notif-popup.pump {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+      border-left-color: #16a34a;
+    }
+
+    .inline-notif-popup.warning {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      border-left-color: #ea580c;
+    }
+
+    .inline-notif-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .inline-notif-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--accent);
+    }
+
+    .inline-notif-popup.pump .inline-notif-badge { color: #15803d; }
+    .inline-notif-popup.warning .inline-notif-badge { color: #c2410c; }
+
+    .inline-notif-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 2px 0;
+    }
+
+    .inline-notif-msg {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .inline-notif-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .notif-history-list {
+      margin-top: 10px;
+      max-height: 360px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-soft);
+      padding: 10px 12px;
+    }
+
+    .notif-log-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 9px 6px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+    }
+
+    .notif-log-item:last-child { border-bottom: none; }
+
+    .notif-log-time {
+      color: var(--text-muted);
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 10px; }
+      .app-shell,
+      .app-shell.sidebar-collapsed {
+        grid-template-columns: 1fr;
+        border-radius: 16px;
+      }
+      .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 14px 16px;
+      }
+      .brand {
+        padding-bottom: 12px;
+        margin-bottom: 10px;
+      }
+      .nav-menu {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .app-shell.mobile-menu-hidden .nav-menu {
+        display: none;
+      }
+      .tab-btn {
+        width: auto;
+        flex: 1 1 140px;
+        justify-content: center;
+        text-align: center;
+      }
+      .sidebar-footer { display: none; }
+      .main-area { padding: 16px; }
+      .toast-container {
+        left: 12px;
+        right: 12px;
+        top: 12px;
+        max-width: none;
+      }
     }
   </style>
 </head>
 <body>
 
-  <!-- BANNER SLIDESHOW INFORMASI & WARNING (8 POIN DI ATAS SEBELUM JUDUL) -->
-  <div class="info-banner-container" id="infoBanner">
-    <div class="info-slide active">⚠️ <b>Warning 1:</b> Pastikan koneksi internet dan broker MQTT stabil sebelum menjalankan sistem hidroponik.</div>
-    <div class="info-slide">💡 <b>Warning 2:</b> Periksa ketersediaan cairan nutrisi A dan B pada tangki sebelum melakukan perintah dosing otomatis.</div>
-    <div class="info-slide">📊 <b>Fitur 1:</b> Pemantauan Suhu Air, pH, dan EC secara real-time melalui grafik interaktif Chart.js.</div>
-    <div class="info-slide">🎛️ <b>Fitur 2:</b> Kontrol aktuator manual (Pompa Utama, Pompa Nutrisi A/B, dan Solenoid Valve) via sakelar toggle.</div>
-    <div class="info-slide">💧 <b>Fitur 3:</b> Pengaturan presisi volume dosing nutrisi dalam satuan mililiter (mL) secara satuan maupun simultan.</div>
-    <div class="info-slide">🟢 <b>Fitur 4:</b> Indikator status operasional *Pilot Lamp* real-time untuk memantau aktuator yang sedang aktif.</div>
-    <div class="info-slide">💾 <b>Fitur 5:</b> Pencatatan riwayat data sensor otomatis yang tersimpan aman di dalam database lokal SQLite.</div>
-    <div class="info-slide">📅 <b>Fitur 6:</b> Fitur filter pencarian data historis berdasarkan tanggal untuk memudahkan evaluasi dan rekapitulasi.</div>
-  </div>
+  <div class="toast-container" id="toast-container"></div>
 
-  <h1>Smart Hydroponic Dashboard</h1>
-  <div class="status-container">
-    <span>Server: <span id="status-text" class="status-offline">● Menghubungkan...</span></span>
-    <span>MQTT Broker: <span id="mqtt-status" class="status-offline">● Disconnected</span></span>
-  </div>
-
-  <!-- Tombol Navigasi Tab -->
-  <div class="nav-tabs">
-    <button class="tab-btn active" onclick="openTab('slide1', this)">Slide 1: Real-Time Sensor</button>
-    <button class="tab-btn" onclick="openTab('slide2', this)">Slide 2: Kontrol Pompa</button>
-    <button class="tab-btn" onclick="openTab('slide3', this)">Slide 3: Riwayat Data</button>
-  </div>
-
-  <!-- SLIDE 1: REAL-TIME SENSOR -->
-  <div id="slide1" class="tab-content active">
-    <div class="cards-grid">
-      <div class="card">
-        <h3>Suhu Air</h3>
-        <div class="val" id="val-temp">0 °C</div>
-      </div>
-      <div class="card">
-        <h3>Nilai pH</h3>
-        <div class="val" id="val-ph">0</div>
-      </div>
-      <div class="card">
-        <h3>Pekatan EC</h3>
-        <div class="val" id="val-ec">0 mS/cm</div>
-      </div>
-    </div>
-
-    <div class="charts-grid">
-      <div class="chart-card"><canvas id="chartTemp"></canvas></div>
-      <div class="chart-card"><canvas id="chartPH"></canvas></div>
-      <div class="chart-card"><canvas id="chartEC"></canvas></div>
-    </div>
-  </div>
-
-  <!-- SLIDE 2: KONTROL POMPA & DOSING -->
-  <div id="slide2" class="tab-content">
-    <div class="control-grid">
-
-      <!-- Panel 1: Status Operasional Lampu Pilot -->
-      <div class="panel-box">
-        <div class="panel-title">Status Operasional (Pilot Lamp)</div>
-
-        <div class="control-row">
-          <span class="control-label">Pompa Utama (Sirkulasi)</span>
-          <div class="pilot-status">
-            <div class="pilot-lamp" id="lamp-main"></div>
-            <span id="text-main">OFF / MATI</span>
-          </div>
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Pompa Dosis Nutrisi A</span>
-          <div class="pilot-status">
-            <div class="pilot-lamp" id="lamp-nut-a"></div>
-            <span id="text-nut-a">OFF</span>
-          </div>
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Pompa Dosis Nutrisi B</span>
-          <div class="pilot-status">
-            <div class="pilot-lamp" id="lamp-nut-b"></div>
-            <span id="text-nut-b">OFF</span>
-          </div>
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Solenoid Valve Air</span>
-          <div class="pilot-status">
-            <div class="pilot-lamp" id="lamp-valve"></div>
-            <span id="text-valve">OFF</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Panel 2: Kontrol Dosing Nutrisi Precise (mL) -->
-      <div class="panel-box">
-        <div class="panel-title">Perintah Dosing Nutrisi (mL)</div>
-        <div class="dosing-group">
-          <div class="input-box">
-            <span class="control-label">Dosis Nutrisi A:</span>
-            <div>
-              <input type="number" id="vol-a" value="10" min="1"> mL
-            </div>
-            <button class="btn-dosing" onclick="kirimDosingSingle('A')">Kirim A</button>
-          </div>
-
-          <div class="input-box">
-            <span class="control-label">Dosis Nutrisi B:</span>
-            <div>
-              <input type="number" id="vol-b" value="10" min="1"> mL
-            </div>
-            <button class="btn-dosing" onclick="kirimDosingSingle('B')">Kirim B</button>
-          </div>
-
-          <hr style="width: 100%; border: 0.5px solid #f0f0f0; margin: 5px 0;">
-
-          <button class="btn-dosing btn-dosing-simultan" onclick="kirimDosingSimultan()">
-            🚀 Dosing Simultan (A & B Bersamaan)
+  <div class="app-shell" id="app-shell">
+    <aside class="sidebar">
+      <div>
+        <div class="sidebar-top-row">
+          <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Buka / Tutup Menu" aria-label="Buka atau tutup menu navigasi">
+            &#9776;
           </button>
-        </div>
-      </div>
-
-      <!-- Panel 3: Sakelar Switch Toggle Control Manual -->
-      <div class="panel-box">
-        <div class="panel-title">Kontrol Manual Sakelar</div>
-
-        <div class="control-row">
-          <span class="control-label">Sakelar Pompa Utama</span>
-          <label class="switch">
-            <input type="checkbox" onchange="toggleActuator('main', this.checked)">
-            <span class="slider"></span>
-          </label>
+          <span class="brand-sub" id="sidebar-state-label">Menu Navigasi</span>
         </div>
 
-        <div class="control-row">
-          <span class="control-label">Sakelar Dosis Nutrisi A</span>
-          <label class="switch">
-            <input type="checkbox" onchange="toggleActuator('nutA', this.checked)">
-            <span class="slider"></span>
-          </label>
+        <div class="brand">
+          <div class="brand-icon">H</div>
+          <div class="brand-text">
+            <div class="brand-title">Hydroponic IoT</div>
+            <div class="brand-sub">Monitoring &amp; Dosing</div>
+          </div>
         </div>
 
-        <div class="control-row">
-          <span class="control-label">Sakelar Dosis Nutrisi B</span>
-          <label class="switch">
-            <input type="checkbox" onchange="toggleActuator('nutB', this.checked)">
-            <span class="slider"></span>
-          </label>
+        <nav class="nav-menu" id="nav-menu">
+          <button class="tab-btn active" onclick="openTab('slide1', this, 'Real-Time Sensor')" title="Real-Time Sensor">
+            <span class="menu-left"><span>📊</span><span class="menu-label">Real-Time Sensor</span></span>
+          </button>
+          <button class="tab-btn" onclick="openTab('slide2', this, 'Kontrol Pompa')" title="Kontrol Pompa">
+            <span class="menu-left"><span>🎛️</span><span class="menu-label">Kontrol Pompa</span></span>
+          </button>
+          <button class="tab-btn" onclick="openTab('slide3', this, 'Riwayat Data')" title="Riwayat Data">
+            <span class="menu-left"><span>📁</span><span class="menu-label">Riwayat Data</span></span>
+          </button>
+          <button class="tab-btn" onclick="openTab('slide4', this, 'Notification')" title="Notification">
+            <span class="menu-left"><span>🔔</span><span class="menu-label">Notification</span></span>
+            <span class="nav-badge" id="notif-unread-badge">0</span>
+          </button>
+          <button class="tab-btn" onclick="openTab('slide5', this, 'Pengaturan')" title="Pengaturan">
+            <span class="menu-left"><span>⚙️</span><span class="menu-label">Pengaturan</span></span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        Sistem pemantauan parameter air &amp; kontrol dosing nutrisi / pH berbasis MQTT &amp; SQLite.
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-heading">
+            <h1 id="page-heading">Real-Time Sensor</h1>
+            <div class="last-update">Data sensor terakhir diterima: <span id="last-update-time">-</span></div>
+          </div>
         </div>
 
-        <div class="control-row">
-          <span class="control-label">Sakelar Solenoid Valve</span>
-          <label class="switch">
-            <input type="checkbox" onchange="toggleActuator('valve', this.checked)">
-            <span class="slider"></span>
-          </label>
+        <div class="status-container">
+          <span class="status-pill">Server: <span id="status-text" class="status-offline">● Menghubungkan...</span></span>
+          <span class="status-pill">MQTT Broker: <span id="mqtt-status" class="status-offline">● Disconnected</span></span>
         </div>
-      </div>
+      </header>
 
-    </div>
-  </div>
+      <!-- HALAMAN 1: REAL-TIME SENSOR -->
+      <section id="slide1" class="tab-content active">
+        <!-- Panel Fase Tanaman Melon -->
+        <div class="crop-phase-box" id="crop-phase-box">
+          <div class="crop-phase-header">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+              <span class="crop-phase-badge">🍈 <span id="phase-label-text">Fase Vegetatif</span></span>
+              <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">
+                Umur: <span id="phase-hss-text">HSS 20</span> • <span id="phase-hst-text">HST 15</span> (<span id="phase-hst-range">HST 15 – 30</span>)
+              </span>
+            </div>
+            <span style="font-size: 11.5px; color: var(--text-muted);">
+              Diperbarui: <span id="phase-updated-at">-</span>
+            </span>
+          </div>
 
-  <!-- SLIDE 3: RIWAYAT DATA -->
-  <div id="slide3" class="tab-content">
+          <div class="control-desc" id="phase-summary-text" style="font-size: 13px; color: var(--text-main);">
+            Pertumbuhan daun, batang, dan sulur aktif; pertahankan pH serta EC konsisten untuk pembentukan kanopi.
+          </div>
 
-    <!-- Filter Tanggal -->
-    <div class="filter-card">
-      <label style="font-weight: bold;">Pilih Tanggal:</label>
-      <input type="date" id="input-date" value="2026-09-03">
-      <button class="btn-search">Cari Data</button>
-    </div>
+          <div class="crop-phase-guides">
+            <div class="crop-guide-chip">
+              <span>Acuan pH Fase Ini</span>
+              <strong id="phase-ph-guide">5.5 – 6.5</strong>
+            </div>
+            <div class="crop-guide-chip">
+              <span>Acuan EC Fase Ini</span>
+              <strong id="phase-ec-guide">1.5 – 2.2 mS/cm</strong>
+            </div>
+            <div class="crop-guide-chip">
+              <span>Acuan Suhu Air</span>
+              <strong id="phase-temp-guide">22 – 29 °C</strong>
+            </div>
+            <div class="crop-guide-chip">
+              <span>Catatan Perawatan</span>
+              <strong id="phase-notes-display">Pertumbuhan vegetatif awal pada media cocopeat.</strong>
+            </div>
+          </div>
 
-    <!-- Cards Summary Rata-Rata -->
-    <div class="cards-grid">
-      <div class="card">
-        <h3>Rata-Rata Suhu</h3>
-        <div class="val">- °C</div>
-      </div>
-      <div class="card">
-        <h3>Rata-Rata pH</h3>
-        <div class="val">-</div>
-      </div>
-      <div class="card">
-        <h3>Rata-Rata EC</h3>
-        <div class="val">- mS/cm</div>
-      </div>
-    </div>
+          <div class="crop-phase-form">
+            <label class="control-label">Fase:</label>
+            <select id="phase-select" onchange="previewPhaseGuide()">
+              <option value="BIBIT">Fase Bibit / Semai</option>
+              <option value="VEGETATIF" selected>Fase Vegetatif</option>
+              <option value="PEMBUNGAAN_PEMBUAHAN">Fase Pembungaan &amp; Pembuahan</option>
+              <option value="PEMBESARAN_PANEN">Fase Pembesaran &amp; Pematangan Buah</option>
+            </select>
 
-    <!-- Table Container -->
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Tanggal</th>
-            <th>Jam / Waktu</th>
-            <th>Suhu (°C)</th>
-            <th>pH</th>
-            <th>EC (mS/cm)</th>
-            <th>Status Parameter</th>
-          </tr>
-        </thead>
-        <tbody id="history-tbody">
-          <!-- Row data akan dimuat di sini -->
-        </tbody>
-      </table>
-    </div>
+            <label class="control-label">HSS:</label>
+            <input type="number" id="phase-hss-input" value="20" min="0" max="160">
 
+            <label class="control-label">HST:</label>
+            <input type="number" id="phase-hst-input" value="15" min="0" max="150">
+
+            <input type="text" id="phase-notes-input" placeholder="Catatan fase / kondisi tanaman melon...">
+
+            <button class="btn-add-sch" onclick="simpanFaseTanaman()">Simpan Fase</button>
+          </div>
+          <div class="status-log-box" id="phase-status-log" style="margin-top: 10px;">
+            Status Fase: Tersinkronisasi dengan database server.
+          </div>
+        </div>
+
+        <div class="slide1-warning-box">
+          <div class="slide1-warning-title">⚠️ Catatan &amp; Peringatan Operasional Sistem</div>
+          <ul class="slide1-warning-list">
+            <li>Pastikan status <b>Server</b> dan <b>MQTT Broker</b> dalam kondisi terhubung sebelum menjalankan kontrol pompa atau penjadwalan dosing.</li>
+            <li>Periksa ketersediaan cairan nutrisi A &amp; B serta cairan pH Up &amp; pH Down pada tangki sebelum melakukan dosing manual maupun otomatis.</li>
+            <li>Pantau pembacaan Suhu Air, pH, dan EC secara berkala, serta pastikan modul pompa terpisah/terisolasi dengan aman dari gangguan/EMI.</li>
+            <li>Gunakan tab <b>Riwayat Data</b> dan tombol <b>Export CSV</b> untuk merekap serta menganalisis data pengujian di lapangan.</li>
+          </ul>
+        </div>
+
+        <div class="cards-grid">
+          <div class="card">
+            <h3>Suhu Air</h3>
+            <div class="val" id="val-temp">0 °C</div>
+          </div>
+          <div class="card">
+            <h3>Nilai pH</h3>
+            <div class="val" id="val-ph">0</div>
+          </div>
+          <div class="card">
+            <h3>Pekatan EC</h3>
+            <div class="val" id="val-ec">0 mS/cm</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="chart-card"><canvas id="chartTemp"></canvas></div>
+          <div class="chart-card"><canvas id="chartPH"></canvas></div>
+          <div class="chart-card"><canvas id="chartEC"></canvas></div>
+        </div>
+      </section>
+
+      <!-- HALAMAN 2: KONTROL POMPA -->
+      <section id="slide2" class="tab-content">
+        <!-- Panel pH Drift Lock -->
+        <div class="panel-box" id="ph-drift-lock-box" style="margin-bottom: 18px; border-left: 5px solid #16a34a;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+            <div>
+              <div class="control-label" style="font-size: 15px;">
+                🔒 pH Drift Lock: <span id="drift-lock-badge" style="color: #16a34a;">UNLOCKED (AMAN)</span>
+              </div>
+              <div class="control-desc" id="drift-lock-detail">
+                Rentang aman pH: 5.5 – 6.8. Dosing pH Up/Down akan terkunci otomatis jika pH melewati batas aman.
+              </div>
+            </div>
+            <button class="btn-secondary-sm" id="btn-unlock-drift" onclick="unlockPhDriftLock()" disabled>
+              Buka Kunci (Unlock)
+            </button>
+          </div>
+        </div>
+
+        <div class="control-grid">
+
+          <div class="panel-box">
+            <div class="panel-title">Status Operasional (Pilot Lamp)</div>
+
+            <div class="control-row">
+              <span class="control-label">Pompa Dosis Nutrisi A</span>
+              <div class="pilot-status">
+                <div class="pilot-lamp" id="lamp-nut-a"></div>
+                <span id="text-nut-a">OFF</span>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Pompa Dosis Nutrisi B</span>
+              <div class="pilot-status">
+                <div class="pilot-lamp" id="lamp-nut-b"></div>
+                <span id="text-nut-b">OFF</span>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Pompa pH Up</span>
+              <div class="pilot-status">
+                <div class="pilot-lamp" id="lamp-ph-up"></div>
+                <span id="text-ph-up">OFF</span>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Pompa pH Down</span>
+              <div class="pilot-status">
+                <div class="pilot-lamp" id="lamp-ph-down"></div>
+                <span id="text-ph-down">OFF</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-box">
+            <div class="panel-title">Perintah Dosing Manual (mL)</div>
+            <div class="dosing-group">
+              <div class="input-box">
+                <span class="control-label">Dosis Nutrisi A:</span>
+                <div class="dose-unit-group">
+                  <input type="number" id="vol-a" value="10" min="1" max="500">
+                  <span>mL</span>
+                </div>
+                <button class="btn-dosing" onclick="kirimDosingSingle('A')">Kirim A</button>
+              </div>
+
+              <div class="input-box">
+                <span class="control-label">Dosis Nutrisi B:</span>
+                <div class="dose-unit-group">
+                  <input type="number" id="vol-b" value="10" min="1" max="500">
+                  <span>mL</span>
+                </div>
+                <button class="btn-dosing" onclick="kirimDosingSingle('B')">Kirim B</button>
+              </div>
+
+              <div class="input-box">
+                <span class="control-label">Dosis pH Up:</span>
+                <div class="dose-unit-group">
+                  <input type="number" id="vol-ph-up" value="5" min="1" max="500">
+                  <span>mL</span>
+                </div>
+                <button class="btn-dosing btn-dosing-ph-up" onclick="kirimDosingSingle('PH_UP')">Kirim Up</button>
+              </div>
+
+              <div class="input-box">
+                <span class="control-label">Dosis pH Down:</span>
+                <div class="dose-unit-group">
+                  <input type="number" id="vol-ph-down" value="5" min="1" max="500">
+                  <span>mL</span>
+                </div>
+                <button class="btn-dosing btn-dosing-ph-down" onclick="kirimDosingSingle('PH_DOWN')">Kirim Down</button>
+              </div>
+
+              <hr style="width: 100%; border: 0; border-top: 1px solid var(--border); margin: 2px 0;">
+
+              <button class="btn-dosing btn-dosing-simultan" onclick="kirimDosingSimultan()">
+                🚀 Dosing Simultan (A &amp; B Bersamaan)
+              </button>
+
+              <div class="status-log-box" id="dosing-status-log">
+                Status Dosing: Menunggu perintah...
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-box">
+            <div class="panel-title">Kontrol Manual Sakelar</div>
+
+            <div class="control-row">
+              <span class="control-label">Sakelar Dosis Nutrisi A</span>
+              <label class="switch">
+                <input type="checkbox" id="switch-nutA" onchange="toggleActuator('nutA', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Sakelar Dosis Nutrisi B</span>
+              <label class="switch">
+                <input type="checkbox" id="switch-nutB" onchange="toggleActuator('nutB', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Sakelar Pompa pH Up</span>
+              <label class="switch">
+                <input type="checkbox" id="switch-phUp" onchange="toggleActuator('phUp', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <span class="control-label">Sakelar Pompa pH Down</span>
+              <label class="switch">
+                <input type="checkbox" id="switch-phDown" onchange="toggleActuator('phDown', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="schedule-box">
+          <div class="panel-title">Dosing Otomatis Berdasarkan Penjadwalan</div>
+
+          <div class="schedule-form">
+            <label class="control-label">Jam:</label>
+            <input type="time" id="sch-time" value="08:00">
+
+            <label class="control-label">Pompa:</label>
+            <select id="sch-pump" onchange="toggleScheduleVolumeInputs()">
+              <option value="AB">Simultan A &amp; B</option>
+              <option value="A">Nutrisi A</option>
+              <option value="B">Nutrisi B</option>
+              <option value="PH_UP">pH Up</option>
+              <option value="PH_DOWN">pH Down</option>
+            </select>
+
+            <span id="sch-vol-single-wrap">
+              <input type="number" id="sch-vol" value="10" min="1" max="500"> mL
+            </span>
+
+            <span id="sch-vol-ab-wrap" style="display: none;">
+              A: <input type="number" id="sch-vol-a" value="10" min="1" max="500"> mL
+              B: <input type="number" id="sch-vol-b" value="10" min="1" max="500"> mL
+            </span>
+
+            <button class="btn-add-sch" onclick="tambahJadwal()">+ Tambah Jadwal</button>
+          </div>
+
+          <div class="status-log-box" id="schedule-status-log">
+            Status Jadwal: Aktif memantau waktu lokal server.
+          </div>
+
+          <div class="table-container" style="margin-top: 12px; padding: 10px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Jam</th>
+                  <th>Pompa</th>
+                  <th>Volume (mL)</th>
+                  <th>Aktif</th>
+                  <th>Terakhir Jalan</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="schedule-tbody">
+                <tr>
+                  <td colspan="7">Belum ada jadwal dosing tersimpan.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- HALAMAN 3: RIWAYAT DATA -->
+      <section id="slide3" class="tab-content">
+        <div class="filter-card">
+          <label style="font-weight: 700;">Pilih Tanggal:</label>
+          <input type="date" id="input-date">
+          <button class="btn-search" onclick="loadHistoryData()">Cari Data</button>
+          <button class="btn-export" onclick="exportCsv()">Export CSV</button>
+        </div>
+
+        <div class="cards-grid">
+          <div class="card">
+            <h3>Rata-Rata Suhu</h3>
+            <div class="val" id="avg-suhu">- °C</div>
+          </div>
+          <div class="card">
+            <h3>Rata-Rata pH</h3>
+            <div class="val" id="avg-ph">-</div>
+          </div>
+          <div class="card">
+            <h3>Rata-Rata EC</h3>
+            <div class="val" id="avg-ec">- mS/cm</div>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Tanggal</th>
+                <th>Jam / Waktu</th>
+                <th>Suhu (°C)</th>
+                <th>pH</th>
+                <th>EC (mS/cm)</th>
+                <th>Status Parameter</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr>
+                <td colspan="7">Silakan pilih tanggal dan klik "Cari Data".</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- HALAMAN 4: NOTIFICATION -->
+      <section id="slide4" class="tab-content">
+        <div class="notif-page-grid">
+          <div class="notif-settings-box">
+            <div class="notif-settings-header">
+              <h2 class="notif-settings-title">🔔 Pengaturan &amp; Pop-up Notifikasi</h2>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn-accent-sm" onclick="triggerTestPopup()">Tes Pop-up</button>
+                <button class="btn-secondary-sm" onclick="requestDesktopPermission()">Izin Notif Browser</button>
+              </div>
+            </div>
+
+            <div class="inline-notif-popup" id="inline-notif-popup">
+              <div class="inline-notif-top">
+                <span class="inline-notif-badge" id="inline-notif-badge">NOTIFIKASI</span>
+                <button class="toast-close" onclick="closeInlinePopup()" title="Tutup Pop-up">&times;</button>
+              </div>
+              <div class="inline-notif-title" id="inline-notif-title">Judul Notifikasi</div>
+              <div class="inline-notif-msg" id="inline-notif-msg">Pesan notifikasi akan tampil di sini.</div>
+              <div class="inline-notif-actions">
+                <span id="inline-notif-time">-</span>
+                <span id="inline-notif-status-note">Pop-up aktif</span>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <div>
+                <div class="control-label">Notifikasi Pop-up (Toast) di Layar</div>
+                <div class="control-desc">Tampilkan banner notifikasi di pojok kanan atas &amp; pop-up di halaman ini.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="pref-toast" checked onchange="saveNotifPrefs()">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <div>
+                <div class="control-label">Notifikasi Pompa &amp; Dosing</div>
+                <div class="control-desc">Beri notifikasi saat pompa nutrisi/pH atau dosing dijalankan/selesai.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="pref-pump" checked onchange="saveNotifPrefs()">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <div>
+                <div class="control-label">Notifikasi Peringatan Parameter Sensor</div>
+                <div class="control-desc">Beri peringatan jika pembacaan Suhu Air, pH, atau EC di luar rentang normal.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="pref-warning" checked onchange="saveNotifPrefs()">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="control-row">
+              <div>
+                <div class="control-label">Notifikasi Desktop / Browser</div>
+                <div class="control-desc">Kirim notifikasi bawaan browser meskipun tab dashboard sedang tidak dibuka.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="pref-desktop" onchange="handleDesktopToggle(this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="notif-settings-box">
+            <div class="notif-settings-header">
+              <h2 class="notif-settings-title">📋 Riwayat Log Notifikasi</h2>
+              <button class="btn-secondary-sm" onclick="clearNotifHistory()">Bersihkan Log</button>
+            </div>
+
+            <div class="notif-history-list" id="notif-history-list">
+              <div class="notif-log-item" style="justify-content: center; color: var(--text-muted);">
+                Belum ada notifikasi tercatat.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HALAMAN 5: PENGATURAN -->
+      <section id="slide5" class="tab-content">
+        <div class="settings-grid">
+          <div class="notif-settings-box">
+            <div class="notif-settings-header">
+              <h2 class="notif-settings-title">🎚️ Ambang Batas Sensor &amp; Dosing</h2>
+              <span style="font-size: 11.5px; color: var(--text-muted);">Update: <span id="settings-updated-at">-</span></span>
+            </div>
+
+            <div class="settings-field-row">
+              <div>
+                <div class="control-label">Rentang Suhu Air (°C)</div>
+                <div class="control-desc">Acuan normal peringatan &amp; status riwayat.</div>
+              </div>
+              <div class="settings-range-inputs">
+                <input type="number" id="set-temp-min" step="0.1" value="20">
+                <span>–</span>
+                <input type="number" id="set-temp-max" step="0.1" value="30">
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div>
+                <div class="control-label">Rentang Nilai pH</div>
+                <div class="control-desc">Acuan normal peringatan &amp; status riwayat.</div>
+              </div>
+              <div class="settings-range-inputs">
+                <input type="number" id="set-ph-min" step="0.1" value="5.5">
+                <span>–</span>
+                <input type="number" id="set-ph-max" step="0.1" value="6.8">
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div>
+                <div class="control-label">Rentang Pekatan EC (mS/cm)</div>
+                <div class="control-desc">Acuan normal peringatan &amp; status riwayat.</div>
+              </div>
+              <div class="settings-range-inputs">
+                <input type="number" id="set-ec-min" step="0.1" value="1.0">
+                <span>–</span>
+                <input type="number" id="set-ec-max" step="0.1" value="3.0">
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div>
+                <div class="control-label">Batas Aman pH Drift Lock</div>
+                <div class="control-desc">Dosing pH Up/Down dikunci jika pH di luar rentang ini.</div>
+              </div>
+              <div class="settings-range-inputs">
+                <input type="number" id="set-drift-min" step="0.1" value="5.5">
+                <span>–</span>
+                <input type="number" id="set-drift-max" step="0.1" value="6.8">
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div>
+                <div class="control-label">Batas Volume Dosing Maksimal (mL)</div>
+                <div class="control-desc">Batas aman volume per perintah manual / jadwal.</div>
+              </div>
+              <div class="settings-range-inputs">
+                <input type="number" id="set-max-vol" min="1" max="500" value="500">
+                <span>mL</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="notif-settings-box">
+            <div class="notif-settings-header">
+              <h2 class="notif-settings-title">🛠️ Profil Perangkat, Lokasi &amp; Kalibrasi</h2>
+              <button class="btn-secondary-sm" onclick="requestSyncAllState()">Sinkron Ulang</button>
+            </div>
+
+            <div class="settings-field-row" style="flex-direction: column; align-items: stretch;">
+              <label class="control-label" for="set-device-id">ID Perangkat Kontrol</label>
+              <input type="text" id="set-device-id" class="settings-text-input" placeholder="Contoh: ESP32-MELON-01">
+            </div>
+
+            <div class="settings-field-row" style="flex-direction: column; align-items: stretch;">
+              <label class="control-label" for="set-farm-location">Lokasi Kebun / Instalasi</label>
+              <input type="text" id="set-farm-location" class="settings-text-input" placeholder="Contoh: Kebun Mitra Cocopeat">
+            </div>
+
+            <div class="settings-field-row" style="flex-direction: column; align-items: stretch;">
+              <label class="control-label" for="set-pump-note">Catatan Tata Letak Pompa &amp; Konektor</label>
+              <input type="text" id="set-pump-note" class="settings-text-input" placeholder="Catatan isolasi pompa / konektor GX16">
+            </div>
+
+            <div class="settings-field-row" style="flex-direction: column; align-items: stretch;">
+              <label class="control-label" for="set-cal-note">Catatan Kalibrasi Sensor (pH / EC / Suhu)</label>
+              <input type="text" id="set-cal-note" class="settings-text-input" placeholder="Tanggal atau catatan kalibrasi terakhir">
+            </div>
+
+            <div class="settings-actions">
+              <button class="btn-add-sch" onclick="simpanPengaturanSistem()">Simpan Pengaturan</button>
+              <button class="btn-secondary-sm" onclick="resetDefaultPengaturan()">Reset Default</button>
+            </div>
+
+            <div class="status-log-box" id="settings-status-log" style="margin-top: 12px;">
+              Status Pengaturan: Menunggu sinkronisasi database.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script>
-    // 0. SCRIPT SLIDESHOW BANNER INFORMASI OTOMATIS
-    let currentInfoSlide = 0;
-    const infoSlides = document.querySelectorAll('.info-slide');
-    setInterval(() => {
-      infoSlides[currentInfoSlide].classList.remove('active');
-      currentInfoSlide = (currentInfoSlide + 1) % infoSlides.length;
-      infoSlides[currentInfoSlide].classList.add('active');
-    }, 4500); // Berganti setiap 4.5 detik
+    const DEFAULT_THRESHOLDS = {
+      tempMin: 20, tempMax: 30,
+      phMin: 5.5,  phMax: 6.8,
+      ecMin: 1.0,  ecMax: 3.0,
+      phDriftMinSafe: 5.5,
+      phDriftMaxSafe: 6.8,
+      maxDosingVolume: 500,
+      deviceId: 'ESP32-MELON-01',
+      farmLocation: 'Kebun Mitra Cocopeat',
+      pumpEnclosureNote: 'Pompa dipisah di box terpisah + konektor 6-pin GX16 (anti EMI/noise)',
+      calibrationNote: 'pH & EC dikalibrasi berkala menggunakan larutan buffer & pH meter'
+    };
 
-    // 1. TAB SWITCHING
-    function openTab(tabId, btnElement) {
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    const SENSOR_THRESHOLDS = {
+      tempMin: DEFAULT_THRESHOLDS.tempMin,
+      tempMax: DEFAULT_THRESHOLDS.tempMax,
+      phMin: DEFAULT_THRESHOLDS.phMin,
+      phMax: DEFAULT_THRESHOLDS.phMax,
+      ecMin: DEFAULT_THRESHOLDS.ecMin,
+      ecMax: DEFAULT_THRESHOLDS.ecMax,
+      maxDosingVolume: DEFAULT_THRESHOLDS.maxDosingVolume
+    };
 
-      document.getElementById(tabId).classList.add('active');
-      btnElement.classList.add('active');
+    const FALLBACK_PHASE_PROFILES = {
+      BIBIT: {
+        key: 'BIBIT',
+        label: 'Fase Bibit / Semai',
+        hstRange: 'HST 0 – 14',
+        phGuide: '5.8 – 6.5',
+        ecGuide: '0.8 – 1.4 mS/cm',
+        tempGuide: '22 – 28 °C',
+        summary: 'Perakaran awal pada media cocopeat; jaga kelembapan stabil tanpa tergenang dan gunakan dosis nutrisi ringan.'
+      },
+      VEGETATIF: {
+        key: 'VEGETATIF',
+        label: 'Fase Vegetatif',
+        hstRange: 'HST 15 – 30',
+        phGuide: '5.5 – 6.5',
+        ecGuide: '1.5 – 2.2 mS/cm',
+        tempGuide: '22 – 29 °C',
+        summary: 'Pertumbuhan daun, batang, dan sulur aktif; pertahankan pH serta EC konsisten untuk pembentukan kanopi.'
+      },
+      PEMBUNGAAN_PEMBUAHAN: {
+        key: 'PEMBUNGAAN_PEMBUAHAN',
+        label: 'Fase Pembungaan & Pembuahan',
+        hstRange: 'HST 31 – 45',
+        phGuide: '5.5 – 6.5',
+        ecGuide: '2.0 – 2.6 mS/cm',
+        tempGuide: '22 – 29 °C',
+        summary: 'Muncul bunga, polinasi/seleksi buah, dan pembesaran awal; jaga kestabilan nutrisi agar calon buah tidak rontok.'
+      },
+      PEMBESARAN_PANEN: {
+        key: 'PEMBESARAN_PANEN',
+        label: 'Fase Pembesaran & Pematangan Buah',
+        hstRange: 'HST 46 – Panen',
+        phGuide: '5.8 – 6.8',
+        ecGuide: '2.2 – 2.8 mS/cm',
+        tempGuide: '22 – 30 °C',
+        summary: 'Pembesaran buah dan peningkatan kualitas hasil; pantau EC, pH, serta jadwal dosing secara cermat.'
+      }
+    };
+
+    let activePhaseProfiles = { ...FALLBACK_PHASE_PROFILES };
+
+    (function setDefaultDate() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      document.getElementById('input-date').value = `${y}-${m}-${d}`;
+    })();
+
+    let unreadNotifCount = 0;
+    let lastParameterAlertKey = '';
+    let inlinePopupTimer = null;
+    let lastDriftLockedState = false;
+
+    const notifPrefs = {
+      toast: true,
+      pump: true,
+      warning: true,
+      desktop: false
+    };
+
+    (function loadNotifPrefs() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('hydroponic_notif_prefs') || 'null');
+        if (saved && typeof saved === 'object') {
+          notifPrefs.toast = saved.toast !== undefined ? Boolean(saved.toast) : true;
+          notifPrefs.pump = saved.pump !== undefined ? Boolean(saved.pump) : true;
+          notifPrefs.warning = saved.warning !== undefined ? Boolean(saved.warning) : true;
+          notifPrefs.desktop = Boolean(saved.desktop);
+        }
+      } catch (e) {}
+
+      document.getElementById('pref-toast').checked = notifPrefs.toast;
+      document.getElementById('pref-pump').checked = notifPrefs.pump;
+      document.getElementById('pref-warning').checked = notifPrefs.warning;
+      document.getElementById('pref-desktop').checked = notifPrefs.desktop;
+    })();
+
+    function saveNotifPrefs() {
+      notifPrefs.toast = document.getElementById('pref-toast').checked;
+      notifPrefs.pump = document.getElementById('pref-pump').checked;
+      notifPrefs.warning = document.getElementById('pref-warning').checked;
+      notifPrefs.desktop = document.getElementById('pref-desktop').checked;
+      try {
+        localStorage.setItem('hydroponic_notif_prefs', JSON.stringify(notifPrefs));
+      } catch (e) {}
     }
 
-    // 2. SOCKET.IO SETUP (Render Server Connection)
+    function requestDesktopPermission() {
+      if (!('Notification' in window)) {
+        alert('Browser ini tidak mendukung notifikasi desktop.');
+        return;
+      }
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') {
+          notifPrefs.desktop = true;
+          document.getElementById('pref-desktop').checked = true;
+          saveNotifPrefs();
+          pushNotification('info', 'Notifikasi Browser Aktif', 'Izin notifikasi desktop berhasil diberikan.');
+        } else {
+          notifPrefs.desktop = false;
+          document.getElementById('pref-desktop').checked = false;
+          saveNotifPrefs();
+          alert('Izin notifikasi browser tidak diberikan.');
+        }
+      });
+    }
+
+    function handleDesktopToggle(checked) {
+      if (checked && 'Notification' in window && Notification.permission !== 'granted') {
+        requestDesktopPermission();
+        return;
+      }
+      saveNotifPrefs();
+    }
+
+    function updateUnreadBadge() {
+      const badge = document.getElementById('notif-unread-badge');
+      if (badge) {
+        badge.innerText = unreadNotifCount > 99 ? '99+' : String(unreadNotifCount);
+      }
+    }
+
+    function showInlinePopup(type, title, message, timeStr) {
+      const popup = document.getElementById('inline-notif-popup');
+      if (!popup) return;
+
+      popup.className = `inline-notif-popup show ${type}`;
+      const badgeLabel = type === 'pump' ? 'POMPA & DOSING' : (type === 'warning' ? 'PERINGATAN SENSOR' : 'INFORMASI SISTEM');
+      document.getElementById('inline-notif-badge').innerText = badgeLabel;
+      document.getElementById('inline-notif-title').innerText = title;
+      document.getElementById('inline-notif-msg').innerText = message;
+      document.getElementById('inline-notif-time').innerText = `Waktu: ${timeStr}`;
+      document.getElementById('inline-notif-status-note').innerText = notifPrefs.toast ? 'Pop-up layar aktif' : 'Pop-up layar nonaktif';
+
+      if (inlinePopupTimer) clearTimeout(inlinePopupTimer);
+      inlinePopupTimer = setTimeout(() => {
+        popup.classList.remove('show');
+      }, 8000);
+    }
+
+    function closeInlinePopup() {
+      const popup = document.getElementById('inline-notif-popup');
+      if (popup) popup.classList.remove('show');
+    }
+
+    function triggerTestPopup() {
+      const nowTime = new Date().toLocaleTimeString('id-ID', { hour12: false });
+      const title = 'Uji Coba Pop-up Notifikasi';
+      const message = 'Contoh tampilan pop-up notifikasi pada halaman Notification & layar dashboard.';
+      showInlinePopup('info', title, message, nowTime);
+      if (notifPrefs.toast) {
+        showToast('info', title, message);
+      }
+      appendNotifHistory('info', title, message, nowTime);
+    }
+
+    function appendNotifHistory(type, title, message, timeStr) {
+      const listEl = document.getElementById('notif-history-list');
+      if (!listEl) return;
+
+      if (listEl.querySelector('.notif-log-item')?.innerText.includes('Belum ada notifikasi tercatat')) {
+        listEl.innerHTML = '';
+      }
+
+      const item = document.createElement('div');
+      item.className = 'notif-log-item';
+      const badgeColor = type === 'warning' ? '#ea580c' : (type === 'pump' ? '#16a34a' : '#5b46f6');
+      item.innerHTML = `
+        <div>
+          <div style="font-weight: 700; color: ${badgeColor};">${title}</div>
+          <div style="color: var(--text-muted); margin-top: 2px;">${message}</div>
+        </div>
+        <div class="notif-log-time">${timeStr}</div>
+      `;
+      listEl.prepend(item);
+    }
+
+    function showToast(type, title, message) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `toast-item ${type}`;
+      toast.innerHTML = `
+        <div>
+          <div class="toast-title">${title}</div>
+          <div class="toast-msg">${message}</div>
+        </div>
+        <button class="toast-close" title="Tutup" onclick="this.parentElement.remove()">&times;</button>
+      `;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        if (toast.parentElement) toast.remove();
+      }, 5000);
+    }
+
+    function pushNotification(type, title, message) {
+      if (type === 'pump' && !notifPrefs.pump) return;
+      if (type === 'warning' && !notifPrefs.warning) return;
+
+      const nowTime = new Date().toLocaleTimeString('id-ID', { hour12: false });
+      appendNotifHistory(type, title, message, nowTime);
+      showInlinePopup(type, title, message, nowTime);
+
+      const notifTabActive = document.getElementById('slide4')?.classList.contains('active');
+      if (!notifTabActive) {
+        unreadNotifCount += 1;
+        updateUnreadBadge();
+      }
+
+      if (notifPrefs.toast) {
+        showToast(type, title, message);
+      }
+
+      if (notifPrefs.desktop && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(title, { body: message });
+        } catch (e) {}
+      }
+    }
+
+    function clearNotifHistory() {
+      const listEl = document.getElementById('notif-history-list');
+      if (listEl) {
+        listEl.innerHTML = `
+          <div class="notif-log-item" style="justify-content: center; color: var(--text-muted);">
+            Belum ada notifikasi tercatat.
+          </div>
+        `;
+      }
+      closeInlinePopup();
+      unreadNotifCount = 0;
+      updateUnreadBadge();
+    }
+
+    function toggleSidebar() {
+      const shell = document.getElementById('app-shell');
+      const label = document.getElementById('sidebar-state-label');
+      if (window.innerWidth <= 900) {
+        shell.classList.toggle('mobile-menu-hidden');
+        const hidden = shell.classList.contains('mobile-menu-hidden');
+        if (label) label.innerText = hidden ? 'Menu Disembunyikan' : 'Menu Navigasi';
+      } else {
+        shell.classList.toggle('sidebar-collapsed');
+        const collapsed = shell.classList.contains('sidebar-collapsed');
+        if (label) label.innerText = collapsed ? '' : 'Menu Navigasi';
+      }
+    }
+
+    function openTab(tabId, btnElement, titleText) {
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      if (btnElement) btnElement.classList.add('active');
+      if (titleText) {
+        document.getElementById('page-heading').innerText = titleText;
+      }
+      if (tabId === 'slide4') {
+        unreadNotifCount = 0;
+        updateUnreadBadge();
+      }
+      if (window.innerWidth <= 900) {
+        document.getElementById('app-shell').classList.add('mobile-menu-hidden');
+      }
+    }
+
+    function previewPhaseGuide() {
+      const key = document.getElementById('phase-select').value;
+      const prof = activePhaseProfiles[key] || FALLBACK_PHASE_PROFILES.VEGETATIF;
+      document.getElementById('phase-hst-range').innerText = prof.hstRange || '-';
+      document.getElementById('phase-ph-guide').innerText = prof.phGuide || '-';
+      document.getElementById('phase-ec-guide').innerText = prof.ecGuide || '-';
+      document.getElementById('phase-temp-guide').innerText = prof.tempGuide || '-';
+      document.getElementById('phase-summary-text').innerText = prof.summary || '';
+    }
+
+    function simpanFaseTanaman() {
+      const phaseKey = document.getElementById('phase-select').value;
+      const hss = Number(document.getElementById('phase-hss-input').value);
+      const hst = Number(document.getElementById('phase-hst-input').value);
+      const notes = document.getElementById('phase-notes-input').value;
+
+      if (!Number.isFinite(hss) || hss < 0 || hss > 160) {
+        return alert('Masukkan nilai HSS valid (0 - 160)!');
+      }
+      if (!Number.isFinite(hst) || hst < 0 || hst > 150) {
+        return alert('Masukkan nilai HST valid (0 - 150)!');
+      }
+      socket.emit('updateCropPhase', { phaseKey, hss: Math.round(hss), hst: Math.round(hst), notes });
+    }
+
     const socket = io();
     const statusText = document.getElementById('status-text');
+    const mqttStatusText = document.getElementById('mqtt-status');
+    const switchMap = {
+      nutA: document.getElementById('switch-nutA'),
+      nutB: document.getElementById('switch-nutB'),
+      phUp: document.getElementById('switch-phUp'),
+      phDown: document.getElementById('switch-phDown')
+    };
+
+    let manualSwitchStates = { nutA: false, nutB: false, phUp: false, phDown: false };
+    let dosingActiveStates = { nutA: false, nutB: false, phUp: false, phDown: false };
+
+    function applySettingsToForm(cfg) {
+      if (!cfg) return;
+      SENSOR_THRESHOLDS.tempMin = Number(cfg.tempMin);
+      SENSOR_THRESHOLDS.tempMax = Number(cfg.tempMax);
+      SENSOR_THRESHOLDS.phMin = Number(cfg.phMin);
+      SENSOR_THRESHOLDS.phMax = Number(cfg.phMax);
+      SENSOR_THRESHOLDS.ecMin = Number(cfg.ecMin);
+      SENSOR_THRESHOLDS.ecMax = Number(cfg.ecMax);
+      SENSOR_THRESHOLDS.maxDosingVolume = Number(cfg.maxDosingVolume) || 500;
+
+      document.getElementById('set-temp-min').value = cfg.tempMin;
+      document.getElementById('set-temp-max').value = cfg.tempMax;
+      document.getElementById('set-ph-min').value = cfg.phMin;
+      document.getElementById('set-ph-max').value = cfg.phMax;
+      document.getElementById('set-ec-min').value = cfg.ecMin;
+      document.getElementById('set-ec-max').value = cfg.ecMax;
+      document.getElementById('set-drift-min').value = cfg.phDriftMinSafe;
+      document.getElementById('set-drift-max').value = cfg.phDriftMaxSafe;
+      document.getElementById('set-max-vol').value = SENSOR_THRESHOLDS.maxDosingVolume;
+      document.getElementById('set-device-id').value = cfg.deviceId || '';
+      document.getElementById('set-farm-location').value = cfg.farmLocation || '';
+      document.getElementById('set-pump-note').value = cfg.pumpEnclosureNote || '';
+      document.getElementById('set-cal-note').value = cfg.calibrationNote || '';
+      document.getElementById('settings-updated-at').innerText = cfg.updatedAt || '-';
+
+      ['vol-a', 'vol-b', 'vol-ph-up', 'vol-ph-down', 'sch-vol', 'sch-vol-a', 'sch-vol-b'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.max = SENSOR_THRESHOLDS.maxDosingVolume;
+      });
+    }
+
+    function simpanPengaturanSistem() {
+      const payload = {
+        tempMin: Number(document.getElementById('set-temp-min').value),
+        tempMax: Number(document.getElementById('set-temp-max').value),
+        phMin: Number(document.getElementById('set-ph-min').value),
+        phMax: Number(document.getElementById('set-ph-max').value),
+        ecMin: Number(document.getElementById('set-ec-min').value),
+        ecMax: Number(document.getElementById('set-ec-max').value),
+        phDriftMinSafe: Number(document.getElementById('set-drift-min').value),
+        phDriftMaxSafe: Number(document.getElementById('set-drift-max').value),
+        maxDosingVolume: Number(document.getElementById('set-max-vol').value),
+        deviceId: document.getElementById('set-device-id').value,
+        farmLocation: document.getElementById('set-farm-location').value,
+        pumpEnclosureNote: document.getElementById('set-pump-note').value,
+        calibrationNote: document.getElementById('set-cal-note').value
+      };
+      socket.emit('updateSystemSettings', payload);
+    }
+
+    function resetDefaultPengaturan() {
+      socket.emit('updateSystemSettings', { ...DEFAULT_THRESHOLDS });
+    }
+
+    function requestSyncAllState() {
+      socket.emit('getSystemSettings');
+      socket.emit('getCropPhase');
+      socket.emit('getSchedules');
+      socket.emit('getInitialActuatorStates');
+      document.getElementById('settings-status-log').innerText = 'Status Pengaturan: Meminta sinkronisasi ulang dari server...';
+    }
+
+    function syncActuatorUI() {
+      ['nutA', 'nutB', 'phUp', 'phDown'].forEach((dev) => {
+        const isActive = Boolean(manualSwitchStates[dev] || dosingActiveStates[dev]);
+        updatePilotLamp(dev, isActive);
+        if (switchMap[dev]) {
+          switchMap[dev].checked = Boolean(manualSwitchStates[dev]);
+        }
+      });
+    }
+
+    function unlockPhDriftLock() {
+      socket.emit('unlockPhDriftLock');
+    }
+
+    socket.on('systemSettingsStatus', (cfg) => {
+      applySettingsToForm(cfg);
+      document.getElementById('settings-status-log').innerText =
+        `Status Pengaturan: Aktif (${cfg.deviceId || '-'} • ${cfg.farmLocation || '-'}).`;
+    });
+
+    socket.on('systemSettingsFeedback', (fb) => {
+      if (fb && fb.message) {
+        document.getElementById('settings-status-log').innerText = `Status Pengaturan: ${fb.message}`;
+        pushNotification(fb.ok === false ? 'warning' : 'info', 'Pengaturan Sistem', fb.message);
+      }
+    });
+
+    socket.on('cropPhaseStatus', (info) => {
+      if (!info) return;
+      if (Array.isArray(info.availablePhases)) {
+        activePhaseProfiles = {};
+        info.availablePhases.forEach((item) => {
+          if (item && item.key) activePhaseProfiles[item.key] = item;
+        });
+      }
+
+      const key = info.phaseKey && activePhaseProfiles[info.phaseKey] ? info.phaseKey : 'VEGETATIF';
+      const prof = info.profile || activePhaseProfiles[key] || FALLBACK_PHASE_PROFILES.VEGETATIF;
+      const hssVal = Number.isFinite(Number(info.hss)) ? Number(info.hss) : 0;
+      const hstVal = Number.isFinite(Number(info.hst)) ? Number(info.hst) : 0;
+      const notesVal = info.notes || '-';
+
+      document.getElementById('phase-label-text').innerText = prof.label;
+      document.getElementById('phase-hss-text').innerText = `HSS ${hssVal}`;
+      document.getElementById('phase-hst-text').innerText = `HST ${hstVal}`;
+      document.getElementById('phase-hst-range').innerText = prof.hstRange || '-';
+      document.getElementById('phase-ph-guide').innerText = prof.phGuide || '-';
+      document.getElementById('phase-ec-guide').innerText = prof.ecGuide || '-';
+      document.getElementById('phase-temp-guide').innerText = prof.tempGuide || '-';
+      document.getElementById('phase-summary-text').innerText = prof.summary || '';
+      document.getElementById('phase-notes-display').innerText = notesVal;
+      document.getElementById('phase-updated-at').innerText = info.updatedAt || '-';
+
+      document.getElementById('phase-select').value = key;
+      document.getElementById('phase-hss-input').value = hssVal;
+      document.getElementById('phase-hst-input').value = hstVal;
+      document.getElementById('phase-notes-input').value = info.notes || '';
+    });
+
+    socket.on('cropPhaseFeedback', (fb) => {
+      if (fb && fb.message) {
+        document.getElementById('phase-status-log').innerText = `Status Fase: ${fb.message}`;
+        pushNotification(fb.ok === false ? 'warning' : 'info', 'Fase Tanaman Melon', fb.message);
+      }
+    });
+
+    socket.on('phDriftLockStatus', (info) => {
+      if (!info) return;
+      const box = document.getElementById('ph-drift-lock-box');
+      const badge = document.getElementById('drift-lock-badge');
+      const detail = document.getElementById('drift-lock-detail');
+      const btn = document.getElementById('btn-unlock-drift');
+      const minSafe = info.minSafe ?? SENSOR_THRESHOLDS.phMin;
+      const maxSafe = info.maxSafe ?? SENSOR_THRESHOLDS.phMax;
+
+      if (info.locked) {
+        if (box) box.style.borderLeftColor = '#dc2626';
+        if (badge) {
+          badge.innerText = 'LOCKED (TERKUNCI)';
+          badge.style.color = '#dc2626';
+        }
+        if (detail) {
+          detail.innerText = `${info.reason || 'pH di luar batas aman'} (${info.updatedAt || '-'}). Dosing pH Up & pH Down diblokir otomatis.`;
+        }
+        if (btn) btn.disabled = false;
+        if (!lastDriftLockedState) {
+          pushNotification('warning', 'pH Drift Lock Aktif', `${info.reason}. Dosing pH dikunci otomatis.`);
+        }
+      } else {
+        if (box) box.style.borderLeftColor = '#16a34a';
+        if (badge) {
+          badge.innerText = 'UNLOCKED (AMAN)';
+          badge.style.color = '#16a34a';
+        }
+        if (detail) {
+          detail.innerText = `Rentang aman pH: ${minSafe} – ${maxSafe}. Terakhir diupdate: ${info.updatedAt || '-'}.`;
+        }
+        if (btn) btn.disabled = true;
+      }
+
+      lastDriftLockedState = Boolean(info.locked);
+    });
 
     socket.on('connect', () => {
       statusText.className = 'status-online';
       statusText.innerText = '● ONLINE';
+      socket.emit('getInitialActuatorStates');
+      socket.emit('getCropPhase');
+      socket.emit('getSystemSettings');
+      pushNotification('info', 'Server Terhubung', 'Koneksi Socket.io ke server dashboard aktif.');
     });
 
     socket.on('disconnect', () => {
       statusText.className = 'status-offline';
       statusText.innerText = '● OFFLINE';
+      pushNotification('warning', 'Server Terputus', 'Koneksi ke server dashboard terputus.');
     });
 
-    // 3. MQTT CLIENT SETUP (Broker EMQX Direct WebSocket)
-    const mqttStatusText = document.getElementById('mqtt-status');
-    const mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-      clientId: 'WebDashboard_' + Math.random().toString(16).substr(2, 8)
-    });
-
-    mqttClient.on('connect', () => {
-      mqttStatusText.className = 'status-online';
-      mqttStatusText.innerText = '● CONNECTED';
-      console.log('Terhubung ke Broker MQTT EMQX!');
-
-      // Subscribe topic status dari ESP32 / Node-RED
-      mqttClient.subscribe('hidroponik/dosing/status');
-    });
-
-    mqttClient.on('offline', () => {
-      mqttStatusText.className = 'status-offline';
-      mqttStatusText.innerText = '● DISCONNECTED';
-    });
-
-    // Menerima update status dari ESP32
-    mqttClient.on('message', (topic, message) => {
-      const msg = message.toString();
-      console.log(`[MQTT IN] ${topic}: ${msg}`);
-
-      if (topic === 'hidroponik/dosing/status') {
-        if (msg.includes('PROSES_POMPA_A')) {
-          updatePilotLamp('nutA', true);
-        } else if (msg.includes('PROSES_POMPA_B')) {
-          updatePilotLamp('nutB', true);
-        } else if (msg.includes('PROSES_POMPA_SIMULTAN_AB')) {
-          updatePilotLamp('nutA', true);
-          updatePilotLamp('nutB', true);
-        } else if (msg.includes('SELESAI') || msg.includes('UNLOCKED')) {
-          updatePilotLamp('nutA', false);
-          updatePilotLamp('nutB', false);
-        }
+    socket.on('mqttStatus', (info) => {
+      if (info && info.connected) {
+        mqttStatusText.className = 'status-online';
+        mqttStatusText.innerText = '● CONNECTED';
+      } else {
+        mqttStatusText.className = 'status-offline';
+        mqttStatusText.innerText = '● DISCONNECTED';
       }
     });
 
-    // 4. CHART.JS CONFIGURATION
+    socket.on('initialActuatorStates', (states) => {
+      ['nutA', 'nutB', 'phUp', 'phDown'].forEach((dev) => {
+        if (states && Object.prototype.hasOwnProperty.call(states, dev)) {
+          manualSwitchStates[dev] = Boolean(states[dev]);
+        }
+      });
+      syncActuatorUI();
+    });
+
+    socket.on('dosingStatus', (msg) => {
+      const str = String(msg || '');
+      if (str.includes('PROSES_POMPA_A')) {
+        dosingActiveStates.nutA = true;
+      } else if (str.includes('PROSES_POMPA_B')) {
+        dosingActiveStates.nutB = true;
+      } else if (str.includes('PROSES_POMPA_SIMULTAN_AB')) {
+        dosingActiveStates.nutA = true;
+        dosingActiveStates.nutB = true;
+      } else if (str.includes('PROSES_POMPA_PH_UP')) {
+        dosingActiveStates.phUp = true;
+      } else if (str.includes('PROSES_POMPA_PH_DOWN')) {
+        dosingActiveStates.phDown = true;
+      } else if (str.includes('SELESAI') || str.includes('UNLOCKED')) {
+        dosingActiveStates = { nutA: false, nutB: false, phUp: false, phDown: false };
+      }
+      syncActuatorUI();
+
+      document.getElementById('dosing-status-log').innerText = `Status Dosing: ${str}`;
+      pushNotification('pump', 'Status Pompa & Dosing', str);
+    });
+
+    socket.on('commandFeedback', (fb) => {
+      if (fb && fb.message) {
+        document.getElementById('dosing-status-log').innerText = `Info: ${fb.message}`;
+        pushNotification(fb.ok === false ? 'warning' : 'pump', 'Perintah Dosing', fb.message);
+      }
+    });
+
     const ctxTemp = document.getElementById('chartTemp').getContext('2d');
     const ctxPH = document.getElementById('chartPH').getContext('2d');
     const ctxEC = document.getElementById('chartEC').getContext('2d');
@@ -612,24 +2163,44 @@
     });
 
     const chartTemp = new Chart(ctxTemp, configChart('Suhu (°C)', '#e74c3c'));
-    const chartPH = new Chart(ctxPH, configChart('pH', '#3498db'));
-    const chartEC = new Chart(ctxEC, configChart('EC (mS/cm)', '#2ecc71'));
+    const chartPH = new Chart(ctxPH, configChart('pH', '#5b46f6'));
+    const chartEC = new Chart(ctxEC, configChart('EC (mS/cm)', '#16a34a'));
 
-    // Receive Real-time Data via Socket.io (Diperbarui menggunakan suhuAir)
+    function checkSensorOutOfRange(suhu, ph, ec) {
+      const warnings = [];
+      if (Number.isFinite(ph) && (ph < SENSOR_THRESHOLDS.phMin || ph > SENSOR_THRESHOLDS.phMax)) warnings.push(`pH (${ph})`);
+      if (Number.isFinite(suhu) && (suhu < SENSOR_THRESHOLDS.tempMin || suhu > SENSOR_THRESHOLDS.tempMax)) warnings.push(`Suhu (${suhu} °C)`);
+      if (Number.isFinite(ec) && (ec < SENSOR_THRESHOLDS.ecMin || ec > SENSOR_THRESHOLDS.ecMax)) warnings.push(`EC (${ec} mS/cm)`);
+
+      if (warnings.length > 0) {
+        const key = warnings.join('|');
+        if (key !== lastParameterAlertKey) {
+          lastParameterAlertKey = key;
+          pushNotification('warning', 'Peringatan Parameter Sensor', `Nilai di luar rentang normal: ${warnings.join(', ')}.`);
+        }
+      } else {
+        lastParameterAlertKey = '';
+      }
+    }
+
     socket.on('sensorData', (data) => {
-      const now = new Date().toLocaleTimeString();
+      const labelTime = data.waktu || new Date().toLocaleTimeString();
+      document.getElementById('last-update-time').innerText = `${data.tanggal || ''} ${labelTime}`.trim();
+
       if (data.suhuAir !== undefined) {
         document.getElementById('val-temp').innerText = `${data.suhuAir} °C`;
-        updateChart(chartTemp, now, data.suhuAir);
+        updateChart(chartTemp, labelTime, data.suhuAir);
       }
       if (data.ph !== undefined) {
         document.getElementById('val-ph').innerText = data.ph;
-        updateChart(chartPH, now, data.ph);
+        updateChart(chartPH, labelTime, data.ph);
       }
       if (data.ec !== undefined) {
         document.getElementById('val-ec').innerText = `${data.ec} mS/cm`;
-        updateChart(chartEC, now, data.ec);
+        updateChart(chartEC, labelTime, data.ec);
       }
+
+      checkSensorOutOfRange(Number(data.suhuAir), Number(data.ph), Number(data.ec));
     });
 
     function updateChart(chart, time, val) {
@@ -642,59 +2213,57 @@
       chart.update();
     }
 
-    // 5. FUNGSI KIRIM DOSING (MQTT & Socket.io)
+    const dosingInputMap = {
+      A: 'vol-a',
+      B: 'vol-b',
+      PH_UP: 'vol-ph-up',
+      PH_DOWN: 'vol-ph-down'
+    };
+
     function kirimDosingSingle(pompa) {
-      const inputVol = document.getElementById(pompa === 'A' ? 'vol-a' : 'vol-b').value;
-      if (!inputVol || inputVol <= 0) return alert('Masukkan volume yang valid!');
-
-      const payload = `${pompa}:${inputVol}`; // Format: A:10 / B:10
-
-      // Kirim via MQTT
-      if (mqttClient.connected) {
-        mqttClient.publish('hidroponik/dosing/set', payload);
+      const inputId = dosingInputMap[pompa];
+      const maxVol = SENSOR_THRESHOLDS.maxDosingVolume;
+      const volume = Number(document.getElementById(inputId).value);
+      if (!Number.isFinite(volume) || volume <= 0 || volume > maxVol) {
+        return alert(`Masukkan volume yang valid (1 - ${maxVol} mL)!`);
       }
-      // Kirim via Socket.io
-      socket.emit('dosingCommand', { pompa: pompa, volume: inputVol });
-
-      alert(`Perintah Dosing Pompa ${pompa} sebesar ${inputVol} mL dikirim!`);
+      socket.emit('dosingCommand', { pompa, volume });
     }
 
     function kirimDosingSimultan() {
-      const volA = document.getElementById('vol-a').value;
-      const volB = document.getElementById('vol-b').value;
-      if (!volA || !volB || volA <= 0 || volB <= 0) return alert('Masukkan volume A dan B yang valid!');
-
-      const payload = `AB:${volA}:${volB}`; // Format: AB:10:10
-
-      // Kirim via MQTT
-      if (mqttClient.connected) {
-        mqttClient.publish('hidroponik/dosing/set', payload);
+      const maxVol = SENSOR_THRESHOLDS.maxDosingVolume;
+      const volumeA = Number(document.getElementById('vol-a').value);
+      const volumeB = Number(document.getElementById('vol-b').value);
+      if (!Number.isFinite(volumeA) || !Number.isFinite(volumeB) || volumeA <= 0 || volumeB <= 0 || volumeA > maxVol || volumeB > maxVol) {
+        return alert(`Masukkan volume A dan B yang valid (1 - ${maxVol} mL)!`);
       }
-      // Kirim via Socket.io
-      socket.emit('dosingCommand', { pompa: 'AB', volumeA: volA, volumeB: volB });
-
-      alert(`Perintah Dosing Simultan (A: ${volA}mL & B: ${volB}mL) dikirim!`);
+      socket.emit('dosingCommand', { pompa: 'AB', volumeA, volumeB });
     }
 
-    // 6. TOGGLE SAKELAR MANUAL
     function toggleActuator(device, isChecked) {
-      const command = `${device.toUpperCase()}_${isChecked ? 'ON' : 'OFF'}`;
-
-      // Emisi Socket.io
-      socket.emit('controlCommand', { command: command, device: device, state: isChecked });
-
-      // Publish MQTT
-      if (mqttClient.connected) {
-        mqttClient.publish('hidroponik/kontrol/manual', JSON.stringify({ device: device, state: isChecked }));
-      }
-
-      // Local UI Pilot Lamp Update
-      updatePilotLamp(device, isChecked);
+      manualSwitchStates[device] = Boolean(isChecked);
+      socket.emit('controlCommand', {
+        command: `${device.toUpperCase()}_${isChecked ? 'ON' : 'OFF'}`,
+        device,
+        state: isChecked
+      });
+      syncActuatorUI();
+      pushNotification('pump', 'Kontrol Sakelar Manual', `${device} diubah menjadi ${isChecked ? 'ON' : 'OFF'}.`);
     }
 
     function updatePilotLamp(device, isOn) {
-      const lampMap = { main: 'lamp-main', nutA: 'lamp-nut-a', nutB: 'lamp-nut-b', valve: 'lamp-valve' };
-      const textMap = { main: 'text-main', nutA: 'text-nut-a', nutB: 'text-nut-b', valve: 'text-valve' };
+      const lampMap = {
+        nutA: 'lamp-nut-a',
+        nutB: 'lamp-nut-b',
+        phUp: 'lamp-ph-up',
+        phDown: 'lamp-ph-down'
+      };
+      const textMap = {
+        nutA: 'text-nut-a',
+        nutB: 'text-nut-b',
+        phUp: 'text-ph-up',
+        phDown: 'text-ph-down'
+      };
 
       const lamp = document.getElementById(lampMap[device]);
       const text = document.getElementById(textMap[device]);
@@ -702,15 +2271,165 @@
       if (lamp && text) {
         if (isOn) {
           lamp.classList.add('on');
-          text.innerText = device === 'main' ? 'ON / NYALA' : 'ON';
-          text.style.color = '#2ecc71';
+          text.innerText = 'ON';
+          text.style.color = '#16a34a';
         } else {
           lamp.classList.remove('on');
-          text.innerText = device === 'main' ? 'OFF / MATI' : 'OFF';
-          text.style.color = '#e74c3c';
+          text.innerText = 'OFF';
+          text.style.color = '#dc2626';
         }
       }
     }
+
+    function toggleScheduleVolumeInputs() {
+      const pump = document.getElementById('sch-pump').value;
+      const isAB = pump === 'AB';
+      document.getElementById('sch-vol-single-wrap').style.display = isAB ? 'none' : 'inline';
+      document.getElementById('sch-vol-ab-wrap').style.display = isAB ? 'inline' : 'none';
+    }
+    toggleScheduleVolumeInputs();
+
+    function tambahJadwal() {
+      const jam = document.getElementById('sch-time').value;
+      const pompa = document.getElementById('sch-pump').value;
+      const maxVol = SENSOR_THRESHOLDS.maxDosingVolume;
+      if (!jam) return alert('Pilih jam penjadwalan terlebih dahulu!');
+
+      if (pompa === 'AB') {
+        const volumeA = Number(document.getElementById('sch-vol-a').value);
+        const volumeB = Number(document.getElementById('sch-vol-b').value);
+        if (!Number.isFinite(volumeA) || !Number.isFinite(volumeB) || volumeA <= 0 || volumeB <= 0 || volumeA > maxVol || volumeB > maxVol) {
+          return alert(`Masukkan volume A dan B valid (1 - ${maxVol} mL)!`);
+        }
+        socket.emit('addSchedule', { jam, pompa, volumeA, volumeB });
+      } else {
+        const volume = Number(document.getElementById('sch-vol').value);
+        if (!Number.isFinite(volume) || volume <= 0 || volume > maxVol) {
+          return alert(`Masukkan volume valid (1 - ${maxVol} mL)!`);
+        }
+        socket.emit('addSchedule', { jam, pompa, volume });
+      }
+    }
+
+    function ubahStatusJadwal(id, enabled) {
+      socket.emit('toggleSchedule', { id, enabled });
+    }
+
+    function hapusJadwal(id) {
+      socket.emit('deleteSchedule', { id });
+    }
+
+    socket.on('scheduleFeedback', (fb) => {
+      if (fb && fb.message) {
+        document.getElementById('schedule-status-log').innerText = `Status Jadwal: ${fb.message}`;
+        pushNotification('info', 'Penjadwalan Dosing', fb.message);
+      }
+    });
+
+    socket.on('scheduleExecuted', (info) => {
+      if (info && info.message) {
+        document.getElementById('schedule-status-log').innerText = `Eksekusi Otomatis: ${info.message}`;
+        pushNotification(info.ok === false ? 'warning' : 'pump', 'Dosing Otomatis Berjalan', info.message);
+      }
+    });
+
+    socket.on('schedulesList', (rows) => {
+      const tbody = document.getElementById('schedule-tbody');
+      tbody.innerHTML = '';
+
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">Belum ada jadwal dosing tersimpan.</td></tr>`;
+        return;
+      }
+
+      rows.forEach((sch, idx) => {
+        const volText = sch.pompa === 'AB' ? `A: ${sch.volumeA} mL, B: ${sch.volumeB} mL` : `${sch.volume} mL`;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td><b>${sch.jam}</b></td>
+          <td>${sch.pompa}</td>
+          <td>${volText}</td>
+          <td>
+            <label class="switch">
+              <input type="checkbox" ${sch.enabled ? 'checked' : ''} onchange="ubahStatusJadwal(${sch.id}, this.checked)">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td>${sch.lastTriggeredDate || '-'}</td>
+          <td><button class="btn-del" onclick="hapusJadwal(${sch.id})">Hapus</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+
+    function getParameterStatus(suhu, ph, ec) {
+      const issues = [];
+      if (ph < SENSOR_THRESHOLDS.phMin || ph > SENSOR_THRESHOLDS.phMax) issues.push('pH');
+      if (suhu < SENSOR_THRESHOLDS.tempMin || suhu > SENSOR_THRESHOLDS.tempMax) issues.push('Suhu');
+      if (ec < SENSOR_THRESHOLDS.ecMin || ec > SENSOR_THRESHOLDS.ecMax) issues.push('EC');
+
+      if (issues.length === 0) {
+        return `<span style="color: #16a34a; font-weight: 700;">Normal</span>`;
+      }
+      return `<span style="color: #ea580c; font-weight: 700;">Cek ${issues.join(', ')}</span>`;
+    }
+
+    function loadHistoryData() {
+      const selectedDate = document.getElementById('input-date').value;
+      if (!selectedDate) {
+        alert('Silakan pilih tanggal terlebih dahulu!');
+        return;
+      }
+      socket.emit('getHistoryData', { date: selectedDate });
+    }
+
+    function exportCsv() {
+      const selectedDate = document.getElementById('input-date').value;
+      const url = selectedDate ? `/api/export?date=${encodeURIComponent(selectedDate)}` : '/api/export';
+      window.location.href = url;
+    }
+
+    socket.on('historyDataResult', (response) => {
+      const tbody = document.getElementById('history-tbody');
+      tbody.innerHTML = '';
+
+      if (!response.data || response.data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7">Tidak ada data riwayat pada tanggal tersebut.</td></tr>`;
+        document.getElementById('avg-suhu').innerText = '- °C';
+        document.getElementById('avg-ph').innerText = '-';
+        document.getElementById('avg-ec').innerText = '- mS/cm';
+        return;
+      }
+
+      let totalTemp = 0, totalPh = 0, totalEc = 0;
+      const count = response.data.length;
+
+      response.data.forEach((row, index) => {
+        const s = Number(row.suhuAir);
+        const p = Number(row.ph);
+        const e = Number(row.ec);
+        totalTemp += s;
+        totalPh += p;
+        totalEc += e;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${row.tanggal}</td>
+          <td>${row.waktu}</td>
+          <td>${s}</td>
+          <td>${p}</td>
+          <td>${e}</td>
+          <td>${getParameterStatus(s, p, e)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('avg-suhu').innerText = `${(totalTemp / count).toFixed(2)} °C`;
+      document.getElementById('avg-ph').innerText = `${(totalPh / count).toFixed(2)}`;
+      document.getElementById('avg-ec').innerText = `${(totalEc / count).toFixed(2)} mS/cm`;
+    });
   </script>
 </body>
 </html>
